@@ -5,6 +5,8 @@ import { CartNavItem } from "./nav/components/cart-nav-item";
 import { UserMenuContainer } from "./nav/components/user-menu/user-menu-container";
 import { MobileMenu } from "./nav/components/mobile-menu";
 import { SearchBar } from "./nav/components/search-bar";
+import { LanguageSwitcher } from "./nav/components/language-switcher";
+import { getSaleorLanguageCode } from "@/lib/saleor-language.server";
 
 function SearchBarSkeleton() {
 	return <div className="h-10 w-full max-w-md animate-pulse rounded-lg bg-secondary" />;
@@ -27,6 +29,8 @@ function NavLinksSkeleton() {
 }
 
 export async function Header({ channel }: { channel: string }) {
+	const saleorLang = await getSaleorLanguageCode();
+
 	return (
 		<header className="sticky top-0 z-40 border-b border-border bg-background">
 			<div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -48,6 +52,10 @@ export async function Header({ channel }: { channel: string }) {
 						</Suspense>
 					</nav>
 
+					<div className="hidden shrink-0 items-center md:flex">
+						<LanguageSwitcher currentCode={saleorLang} />
+					</div>
+
 					{/* Actions */}
 					<div className="flex items-center gap-1">
 						<Suspense fallback={<div className="h-10 w-10" />}>
@@ -64,6 +72,9 @@ export async function Header({ channel }: { channel: string }) {
 								<Suspense fallback={<NavLinksSkeleton />}>
 									<NavLinks channel={channel} />
 								</Suspense>
+								<li className="border-border border-t pt-3">
+									<LanguageSwitcher currentCode={saleorLang} className="w-full max-w-none" />
+								</li>
 							</MobileMenu>
 						</Suspense>
 					</div>

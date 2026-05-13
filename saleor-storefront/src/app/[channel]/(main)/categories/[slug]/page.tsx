@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { type ResolvingMetadata, type Metadata } from "next";
-import { ProductListByCategoryDocument } from "@/gql/graphql";
+import { ProductListByCategoryDocument, type ProductListByCategoryQuery } from "@/gql/graphql";
 import { executePublicGraphQL } from "@/lib/graphql";
 import { CACHE_PROFILES, applyCacheProfile } from "@/lib/cache-manifest";
 import { getPaginatedListVariables } from "@/lib/utils";
@@ -9,14 +9,32 @@ import { parseEditorJSToText } from "@/lib/editorjs";
 import { CategoryHero, transformToProductCard } from "@/ui/components/plp";
 import { buildSortVariables, buildFilterVariables } from "@/ui/components/plp/filter-utils";
 import { CategoryPageClient } from "./client";
+import type { SaleorLanguageCode } from "@/lib/saleor-language";
+import { getSaleorLanguageCode } from "@/lib/saleor-language.server";
 
-async function getCategoryData(slug: string, channel: string) {
-	"use cache";
-	applyCacheProfile(CACHE_PROFILES.categories, slug);
+type CategoryNode = NonNullable<ProductListByCategoryQuery["category"]>;
 
+function mergeLocalizedCategory(category: CategoryNode): CategoryNode {
+	const tr = category.translation;
+	if (!tr) return category;
+	return {
+		...category,
+		name: tr.name || category.name,
+		description: tr.description ?? category.description,
+		seoTitle: tr.seoTitle ?? category.seoTitle,
+		seoDescription: tr.seoDescription ?? category.seoDescription,
+	};
+}
+
+async function fetchCategoryHero(
+	slug: string,
+	channel: string,
+	languageCode: SaleorLanguageCode,
+	mode: "dynamic" | "cached",
+) {
 	const result = await executePublicGraphQL(ProductListByCategoryDocument, {
-		variables: { slug, channel, first: 1 },
-		revalidate: 300,
+		variables: { slug, channel, languageCode, first: 1 },
+		...(mode === "dynamic" ? { cache: "no-store" as const } : { revalidate: 300 }),
 	});
 
 	if (!result.ok) {
@@ -24,7 +42,23 @@ async function getCategoryData(slug: string, channel: string) {
 		return null;
 	}
 
-	return result.data.category;
+	const cat = result.data.category;
+	if (!cat) return null;
+	return mergeLocalizedCategory(cat);
+}
+
+async function getCategoryDataCached(slug: string, channel: string, languageCode: SaleorLanguageCode) {
+	"use cache";
+	applyCacheProfile(CACHE_PROFILES.categories, slug);
+	return fetchCategoryHero(slug, channel, languageCode, "cached");
+}
+
+async function getCategoryData(slug: string, channel: string) {
+	const languageCode = await getSaleorLanguageCode();
+	if (process.env.NODE_ENV === "development") {
+		return fetchCategoryHero(slug, channel, languageCode, "dynamic");
+	}
+	return getCategoryDataCached(slug, channel, languageCode);
 }
 
 type PageProps = {
@@ -107,6 +141,7 @@ async function CategoryProducts({
 	searchParams: PageProps["searchParams"];
 }) {
 	const [params, searchParams] = await Promise.all([paramsPromise, searchParamsPromise]);
+	const languageCode = await getSaleorLanguageCode();
 
 	const paginationVariables = getPaginatedListVariables({ params: searchParams });
 	const sortBy = buildSortVariables(searchParams.sort);
@@ -116,6 +151,7 @@ async function CategoryProducts({
 		variables: {
 			slug: params.slug,
 			channel: params.channel,
+			languageCode,
 			...paginationVariables,
 			sortBy,
 			filter,

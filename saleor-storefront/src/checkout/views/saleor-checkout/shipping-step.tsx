@@ -8,7 +8,7 @@ import { type CheckoutFragment, useCheckoutDeliveryMethodUpdateMutation } from "
 import { CheckoutSummaryContext, buildShippingSummaryRows } from "./checkout-summary-context";
 import { useCheckout } from "@/checkout/hooks/use-checkout";
 import { formatShippingPrice } from "@/checkout/lib/utils/money";
-import { localeConfig } from "@/config/locale";
+import { readSaleorLanguageCodeFromDocumentCookie } from "@/lib/saleor-language-cookie";
 import { MobileStickyAction } from "./mobile-sticky-action";
 import { getStepNumber } from "./flow";
 
@@ -75,10 +75,11 @@ export const ShippingStep: FC<ShippingStepProps> = ({ checkout: initialCheckout,
 			setError(null);
 
 			try {
+				const languageCode = readSaleorLanguageCodeFromDocumentCookie();
 				const result = await updateDeliveryMethod({
 					checkoutId: checkout.id,
 					deliveryMethodId: selectedMethod,
-					languageCode: localeConfig.graphqlLanguageCode,
+					languageCode,
 				});
 
 				if (result.error) {

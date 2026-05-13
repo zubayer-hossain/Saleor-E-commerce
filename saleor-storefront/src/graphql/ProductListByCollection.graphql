@@ -1,6 +1,7 @@
 query ProductListByCollection(
 	$slug: String!
 	$channel: String!
+	$languageCode: LanguageCodeEnum!
 	$first: Int
 	$after: String
 	$sortBy: ProductOrder
@@ -16,6 +17,12 @@ query ProductListByCollection(
 		backgroundImage {
 			url
 			alt
+		}
+		translation(languageCode: $languageCode) {
+			name
+			description
+			seoTitle
+			seoDescription
 		}
 		products(first: $first, after: $after, sortBy: $sortBy, filter: $filter) {
 			edges {

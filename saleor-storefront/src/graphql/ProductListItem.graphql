@@ -2,6 +2,9 @@ fragment ProductListItem on Product {
 	id
 	name
 	slug
+	translation(languageCode: $languageCode) {
+		name
+	}
 	created
 	pricing {
 		priceRange {
@@ -37,6 +40,9 @@ fragment ProductListItem on Product {
 		id
 		name
 		slug
+		translation(languageCode: $languageCode) {
+			name
+		}
 	}
 	thumbnail(size: 1024, format: WEBP) {
 		url

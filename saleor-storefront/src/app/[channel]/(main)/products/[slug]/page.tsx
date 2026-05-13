@@ -7,6 +7,8 @@ import xss from "xss";
 
 import { executePublicGraphQL } from "@/lib/graphql";
 import { ProductDetailsDocument, type ProductDetailsQuery } from "@/gql/graphql";
+import type { SaleorLanguageCode } from "@/lib/saleor-language";
+import { getSaleorLanguageCode } from "@/lib/saleor-language.server";
 import { buildPageMetadata, buildProductJsonLd } from "@/lib/seo";
 import { CACHE_PROFILES, applyCacheProfile } from "@/lib/cache-manifest";
 import { Breadcrumbs } from "@/ui/components/breadcrumbs";
@@ -22,10 +24,16 @@ import {
 // Cached Data Fetching
 // ============================================================================
 
-async function fetchProductDetails(slug: string, channel: string, mode: "dynamic" | "cached") {
+async function fetchProductDetails(
+	slug: string,
+	channel: string,
+	languageCode: SaleorLanguageCode,
+	mode: "dynamic" | "cached",
+) {
 	const variables = {
 		slug: decodeURIComponent(slug),
 		channel,
+		languageCode,
 	};
 
 	const result =
@@ -44,21 +52,41 @@ async function fetchProductDetails(slug: string, channel: string, mode: "dynamic
 		return null;
 	}
 
-	return result.data.product;
+	const p = result.data.product;
+	if (!p) return null;
+
+	const tr = p.translation;
+	const categoryLocalized =
+		p.category ?
+			{
+				...p.category,
+				name: p.category.translation?.name || p.category.name,
+			}
+		:	null;
+
+	return {
+		...p,
+		category: categoryLocalized,
+		name: tr?.name || p.name,
+		description: tr?.description ?? p.description,
+		seoTitle: tr?.seoTitle ?? p.seoTitle,
+		seoDescription: tr?.seoDescription ?? p.seoDescription,
+	};
 }
 
-async function getProductDataCached(slug: string, channel: string) {
+async function getProductDataCached(slug: string, channel: string, languageCode: SaleorLanguageCode) {
 	"use cache";
 	applyCacheProfile(CACHE_PROFILES.products, slug);
-	return fetchProductDetails(slug, channel, "cached");
+	return fetchProductDetails(slug, channel, languageCode, "cached");
 }
 
 async function getProductData(slug: string, channel: string) {
+	const languageCode = await getSaleorLanguageCode();
 	// In development, skip Cache Components + ISR so dashboard edits show immediately.
 	if (process.env.NODE_ENV === "development") {
-		return fetchProductDetails(slug, channel, "dynamic");
+		return fetchProductDetails(slug, channel, languageCode, "dynamic");
 	}
-	return getProductDataCached(slug, channel);
+	return getProductDataCached(slug, channel, languageCode);
 }
 
 // ============================================================================

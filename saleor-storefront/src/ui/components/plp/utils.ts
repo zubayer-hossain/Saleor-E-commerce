@@ -69,23 +69,29 @@ export function transformToProductCard(product: ProductListItemFragment, channel
 	const colors = extractColorsFromVariants(product.variants);
 	const sizes = extractSizesFromVariants(product.variants);
 
+	const displayName = product.translation?.name || product.name;
+
 	return {
 		id: product.id,
-		name: product.name,
+		name: displayName,
 		slug: product.slug,
-		brand: product.category?.name ?? null,
+		brand: product.category?.translation?.name || product.category?.name || null,
 		price: startPrice?.amount ?? 0,
 		compareAtPrice: isSale ? undiscountedStartPrice?.amount : null,
 		currency: startPrice?.currency ?? localeConfig.fallbackCurrency,
 		image: product.thumbnail?.url ?? "/placeholder.svg",
-		imageAlt: product.thumbnail?.alt ?? product.name,
+		imageAlt: product.thumbnail?.alt ?? displayName,
 		hoverImage: null, // Would need additional media in fragment
 		href: `/${channel}/products/${product.slug}`,
 		badge: isSale ? "Sale" : null,
 		colors,
 		sizes,
 		category: product.category
-			? { id: product.category.id, name: product.category.name, slug: product.category.slug }
+			? {
+					id: product.category.id,
+					name: product.category.translation?.name || product.category.name,
+					slug: product.category.slug,
+				}
 			: null,
 		createdAt: product.created,
 		hasVariants: (product.variants?.length ?? 0) > 1,

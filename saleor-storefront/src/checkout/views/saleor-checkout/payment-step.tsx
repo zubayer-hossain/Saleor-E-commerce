@@ -19,7 +19,7 @@ import { getAddressInputData } from "@/checkout/components/address-form/utils";
 // Dummy payment gateway ID (from Saleor Dummy Payment app)
 const dummyGatewayId = "mirumee.payments.dummy";
 import { createQueryString } from "@/checkout/lib/utils/url";
-import { localeConfig } from "@/config/locale";
+import { readSaleorLanguageCodeFromDocumentCookie } from "@/lib/saleor-language-cookie";
 import { MobileStickyAction } from "./mobile-sticky-action";
 import { getStepNumber } from "./flow";
 
@@ -160,6 +160,7 @@ export const PaymentStep: FC<PaymentStepProps> = ({
 
 			setIsProcessing(true);
 			try {
+				const languageCode = readSaleorLanguageCodeFromDocumentCookie();
 				// Update billing address
 				if (needsBillingForm) {
 					let addressInput;
@@ -194,7 +195,7 @@ export const PaymentStep: FC<PaymentStepProps> = ({
 					const result = await updateBillingAddress({
 						checkoutId: checkout.id,
 						billingAddress: addressInput,
-						languageCode: localeConfig.graphqlLanguageCode,
+						languageCode,
 					});
 					if (result.error) {
 						setErrors({ streetAddress1: "Failed to update billing address" });
@@ -230,7 +231,7 @@ export const PaymentStep: FC<PaymentStepProps> = ({
 					await updateBillingAddress({
 						checkoutId: checkout.id,
 						billingAddress: addressInput,
-						languageCode: localeConfig.graphqlLanguageCode,
+						languageCode,
 					});
 				}
 

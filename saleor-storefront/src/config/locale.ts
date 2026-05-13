@@ -6,7 +6,10 @@ export const localeConfig = {
 	/** Locale for Intl APIs (number/date formatting) - BCP 47 format */
 	default: "en-US",
 
-	/** Language code for Saleor API - controls translated content */
+	/**
+	 * Fallback Saleor `LanguageCodeEnum` when cookie/header helpers are unavailable.
+	 * Storefront catalog language is driven by `saleor-language-code` cookie (see `@/lib/saleor-language`).
+	 */
 	graphqlLanguageCode: "EN_US" as const,
 
 	/** HTML lang attribute */

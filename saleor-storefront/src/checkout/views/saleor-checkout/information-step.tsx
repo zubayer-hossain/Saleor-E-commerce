@@ -20,7 +20,7 @@ import {
 } from "@/checkout/components/address-form/utils";
 import { useUser } from "@/checkout/hooks/use-user";
 import { getQueryParams, createQueryString } from "@/checkout/lib/utils/url";
-import { localeConfig } from "@/config/locale";
+import { readSaleorLanguageCodeFromDocumentCookie } from "@/lib/saleor-language-cookie";
 import { getStepNumber } from "./flow";
 
 // Extracted components
@@ -282,12 +282,13 @@ export const InformationStep: FC<InformationStepProps> = ({ checkout, onNext }) 
 			// ----- Save to Saleor -----
 			setIsSubmitting(true);
 			try {
+				const languageCode = readSaleorLanguageCodeFromDocumentCookie();
 				// Update email (guests)
 				if (!authenticated) {
 					const emailResult = await updateEmail({
 						checkoutId: checkout.id,
 						email,
-						languageCode: localeConfig.graphqlLanguageCode,
+						languageCode,
 					});
 					if (emailResult.error) {
 						setErrors({ email: "Failed to update email" });
@@ -339,7 +340,7 @@ export const InformationStep: FC<InformationStepProps> = ({ checkout, onNext }) 
 						const addressResult = await updateShippingAddress({
 							checkoutId: checkout.id,
 							shippingAddress: addressInput,
-							languageCode: localeConfig.graphqlLanguageCode,
+							languageCode,
 						});
 
 						if (addressResult.error) {

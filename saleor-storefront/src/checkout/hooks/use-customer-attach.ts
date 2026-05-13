@@ -2,7 +2,8 @@ import { useCheckoutCustomerAttachMutation } from "@/checkout/graphql";
 import { useUser } from "@/checkout/hooks/use-user";
 import { useCheckout } from "@/checkout/hooks/use-checkout";
 import { useSafeMutationOnce } from "@/checkout/hooks/use-safe-mutation";
-import { localeConfig } from "@/config/locale";
+import { readSaleorLanguageCodeFromDocumentCookie } from "@/lib/saleor-language-cookie";
+import { useMemo } from "react";
 
 /**
  * Attaches the logged-in user to the checkout.
@@ -14,6 +15,7 @@ export const useCustomerAttach = () => {
 	const { checkout, fetching: fetchingCheckout, refetch } = useCheckout();
 	const { authenticated } = useUser();
 	const [{ fetching }, customerAttach] = useCheckoutCustomerAttachMutation();
+	const languageCode = useMemo(() => readSaleorLanguageCodeFromDocumentCookie(), []);
 
 	const checkoutId = checkout?.id;
 	const checkoutUserId = checkout?.user?.id;
@@ -23,10 +25,10 @@ export const useCustomerAttach = () => {
 
 	useSafeMutationOnce(
 		customerAttach,
-		{ checkoutId: checkoutId || "", languageCode: localeConfig.graphqlLanguageCode },
+		{ checkoutId: checkoutId || "", languageCode },
 		{
 			skip: shouldSkip,
-			deps: [checkoutId, authenticated],
+			deps: [checkoutId, authenticated, languageCode],
 			onError: (error) => {
 				// "Already attached" is fine - just refetch to sync state
 				if (error.message?.includes("cannot reassign")) {

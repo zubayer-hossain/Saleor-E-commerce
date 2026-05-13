@@ -1,6 +1,7 @@
 query ProductListByCategory(
 	$slug: String!
 	$channel: String!
+	$languageCode: LanguageCodeEnum!
 	$first: Int
 	$after: String
 	$sortBy: ProductOrder
@@ -16,6 +17,12 @@ query ProductListByCategory(
 		backgroundImage {
 			url
 			alt
+		}
+		translation(languageCode: $languageCode) {
+			name
+			description
+			seoTitle
+			seoDescription
 		}
 		products(first: $first, after: $after, channel: $channel, sortBy: $sortBy, filter: $filter) {
 			edges {

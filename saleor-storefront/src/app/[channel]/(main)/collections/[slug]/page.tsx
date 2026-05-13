@@ -1,7 +1,12 @@
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { type ResolvingMetadata, type Metadata } from "next";
-import { ProductListByCollectionDocument, ProductOrderField, OrderDirection } from "@/gql/graphql";
+import {
+	ProductListByCollectionDocument,
+	ProductOrderField,
+	OrderDirection,
+	type ProductListByCollectionQuery,
+} from "@/gql/graphql";
 import { executePublicGraphQL } from "@/lib/graphql";
 import { CACHE_PROFILES, applyCacheProfile } from "@/lib/cache-manifest";
 import { getPaginatedListVariables } from "@/lib/utils";
@@ -9,14 +14,32 @@ import { parseEditorJSToText } from "@/lib/editorjs";
 import { CategoryHero, transformToProductCard } from "@/ui/components/plp";
 import { buildSortVariables, buildFilterVariables } from "@/ui/components/plp/filter-utils";
 import { CollectionPageClient } from "./client";
+import type { SaleorLanguageCode } from "@/lib/saleor-language";
+import { getSaleorLanguageCode } from "@/lib/saleor-language.server";
 
-async function getCollectionData(slug: string, channel: string) {
-	"use cache";
-	applyCacheProfile(CACHE_PROFILES.collections, slug);
+type CollectionNode = NonNullable<ProductListByCollectionQuery["collection"]>;
 
+function mergeLocalizedCollection(collection: CollectionNode): CollectionNode {
+	const tr = collection.translation;
+	if (!tr) return collection;
+	return {
+		...collection,
+		name: tr.name || collection.name,
+		description: tr.description ?? collection.description,
+		seoTitle: tr.seoTitle ?? collection.seoTitle,
+		seoDescription: tr.seoDescription ?? collection.seoDescription,
+	};
+}
+
+async function fetchCollectionHero(
+	slug: string,
+	channel: string,
+	languageCode: SaleorLanguageCode,
+	mode: "dynamic" | "cached",
+) {
 	const result = await executePublicGraphQL(ProductListByCollectionDocument, {
-		variables: { slug, channel, first: 1 },
-		revalidate: 300,
+		variables: { slug, channel, languageCode, first: 1 },
+		...(mode === "dynamic" ? { cache: "no-store" as const } : { revalidate: 300 }),
 	});
 
 	if (!result.ok) {
@@ -24,7 +47,23 @@ async function getCollectionData(slug: string, channel: string) {
 		return null;
 	}
 
-	return result.data.collection;
+	const col = result.data.collection;
+	if (!col) return null;
+	return mergeLocalizedCollection(col);
+}
+
+async function getCollectionDataCached(slug: string, channel: string, languageCode: SaleorLanguageCode) {
+	"use cache";
+	applyCacheProfile(CACHE_PROFILES.collections, slug);
+	return fetchCollectionHero(slug, channel, languageCode, "cached");
+}
+
+async function getCollectionData(slug: string, channel: string) {
+	const languageCode = await getSaleorLanguageCode();
+	if (process.env.NODE_ENV === "development") {
+		return fetchCollectionHero(slug, channel, languageCode, "dynamic");
+	}
+	return getCollectionDataCached(slug, channel, languageCode);
 }
 
 type PageProps = {
@@ -107,6 +146,7 @@ async function CollectionProducts({
 	searchParams: PageProps["searchParams"];
 }) {
 	const [params, searchParams] = await Promise.all([paramsPromise, searchParamsPromise]);
+	const languageCode = await getSaleorLanguageCode();
 
 	const paginationVariables = getPaginatedListVariables({ params: searchParams });
 	const sortBy = buildSortVariables(searchParams.sort) ?? {
@@ -119,6 +159,7 @@ async function CollectionProducts({
 		variables: {
 			slug: params.slug,
 			channel: params.channel,
+			languageCode,
 			...paginationVariables,
 			sortBy,
 			filter,

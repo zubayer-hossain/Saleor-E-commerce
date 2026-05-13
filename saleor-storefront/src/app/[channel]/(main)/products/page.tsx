@@ -7,6 +7,7 @@ import { CategoryHero, transformToProductCard } from "@/ui/components/plp";
 import { buildSortVariables, buildFilterVariables } from "@/ui/components/plp/filter-utils";
 import { resolveCategorySlugsToIds } from "@/ui/components/plp/filter-utils.server";
 import { ProductsPageClient } from "./products-client";
+import { getSaleorLanguageCode } from "@/lib/saleor-language.server";
 
 export const metadata = {
 	title: "Products · Saleor Storefront example",
@@ -73,6 +74,7 @@ async function ProductsContent({
 	const categorySlugs = searchParams.categories?.split(",").filter(Boolean) || [];
 	const categoryMap = await resolveCategorySlugsToIds(categorySlugs);
 	const categoryIds = Array.from(categoryMap.values()).map((c) => c.id);
+	const languageCode = await getSaleorLanguageCode();
 
 	const filter = buildFilterVariables({
 		priceRange: searchParams.price,
@@ -83,6 +85,7 @@ async function ProductsContent({
 		variables: {
 			...paginationVariables,
 			channel: params.channel,
+			languageCode,
 			sortBy,
 			filter,
 		},

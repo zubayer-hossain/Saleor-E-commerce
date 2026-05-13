@@ -6,6 +6,7 @@ import { SearchResults } from "@/ui/components/search-results";
 import { Pagination } from "@/ui/components/pagination";
 import { SearchSort } from "./search-sort";
 import { SearchIcon } from "lucide-react";
+import { getSaleorLanguageCode } from "@/lib/saleor-language.server";
 
 export const metadata = {
 	title: "Search products · Saleor Storefront example",
@@ -75,10 +76,13 @@ async function SearchContent({
 		? (sortParam as "relevance" | "price-asc" | "price-desc" | "name" | "newest")
 		: "relevance";
 
+	const languageCode = await getSaleorLanguageCode();
+
 	// Search using Saleor
 	const result = await searchProducts({
 		query,
 		channel: params.channel,
+		languageCode,
 		limit: 20,
 		cursor,
 		direction,

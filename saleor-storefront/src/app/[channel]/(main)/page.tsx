@@ -3,6 +3,8 @@ import { ProductListByCollectionDocument, ProductOrderField, OrderDirection } fr
 import { executePublicGraphQL } from "@/lib/graphql";
 import { CACHE_PROFILES, applyCacheProfile } from "@/lib/cache-manifest";
 import { ProductList } from "@/ui/components/product-list";
+import type { SaleorLanguageCode } from "@/lib/saleor-language";
+import { getSaleorLanguageCode } from "@/lib/saleor-language.server";
 
 export const metadata = {
 	title: "ACME Storefront, powered by Saleor & Next.js",
@@ -16,18 +18,20 @@ export const metadata = {
  * Note: the empty array IS cached for the cacheLife duration —
  * on-demand revalidation via cacheTag is the intended recovery path.
  */
-async function getFeaturedProducts(channel: string) {
-	"use cache";
-	applyCacheProfile(CACHE_PROFILES.collections, "featured-products");
-
+async function fetchFeaturedProducts(
+	channel: string,
+	languageCode: SaleorLanguageCode,
+	mode: "dynamic" | "cached",
+) {
 	const result = await executePublicGraphQL(ProductListByCollectionDocument, {
 		variables: {
 			slug: "featured-products",
 			channel,
+			languageCode,
 			first: 12,
 			sortBy: { field: ProductOrderField.Collection, direction: OrderDirection.Asc },
 		},
-		revalidate: 300,
+		...(mode === "dynamic" ? { cache: "no-store" as const } : { revalidate: 300 }),
 	});
 
 	if (!result.ok) {
@@ -36,6 +40,20 @@ async function getFeaturedProducts(channel: string) {
 	}
 
 	return result.data.collection?.products?.edges.map(({ node }) => node) ?? [];
+}
+
+async function getFeaturedProductsCached(channel: string, languageCode: SaleorLanguageCode) {
+	"use cache";
+	applyCacheProfile(CACHE_PROFILES.collections, "featured-products");
+
+	return fetchFeaturedProducts(channel, languageCode, "cached");
+}
+
+async function getFeaturedProducts(channel: string, languageCode: SaleorLanguageCode) {
+	if (process.env.NODE_ENV === "development") {
+		return fetchFeaturedProducts(channel, languageCode, "dynamic");
+	}
+	return getFeaturedProductsCached(channel, languageCode);
 }
 
 /**
@@ -77,7 +95,8 @@ export default function Page(props: { params: Promise<{ channel: string }> }) {
 
 async function FeaturedProducts({ params: paramsPromise }: { params: Promise<{ channel: string }> }) {
 	const { channel } = await paramsPromise;
-	const products = await getFeaturedProducts(channel);
+	const languageCode = await getSaleorLanguageCode();
+	const products = await getFeaturedProducts(channel, languageCode);
 
 	return <ProductList products={products} />;
 }

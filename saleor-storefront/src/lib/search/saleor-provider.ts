@@ -8,11 +8,13 @@
 import { executePublicGraphQL } from "@/lib/graphql";
 import { SearchProductsDocument, OrderDirection, ProductOrderField } from "@/gql/graphql";
 import type { SearchProduct, SearchResult, SearchPagination } from "./types";
+import type { SaleorLanguageCode } from "@/lib/saleor-language";
 import { localeConfig } from "@/config/locale";
 
 interface SearchOptions {
 	query: string;
 	channel: string;
+	languageCode: SaleorLanguageCode;
 	limit?: number;
 	cursor?: string;
 	direction?: "forward" | "backward";
@@ -26,7 +28,15 @@ interface SearchOptions {
  * See the examples in ./index.ts for Typesense, Algolia, Meilisearch.
  */
 export async function searchProducts(options: SearchOptions): Promise<SearchResult> {
-	const { query, channel, limit = 20, cursor, direction = "forward", sortBy = "relevance" } = options;
+	const {
+		query,
+		channel,
+		languageCode,
+		limit = 20,
+		cursor,
+		direction = "forward",
+		sortBy = "relevance",
+	} = options;
 
 	const { field, order } = mapSortToSaleor(sortBy);
 
@@ -37,6 +47,7 @@ export async function searchProducts(options: SearchOptions): Promise<SearchResu
 		variables: {
 			search: query,
 			channel,
+			languageCode,
 			sortBy: field,
 			sortDirection: order,
 			first: isBackward ? undefined : limit,
