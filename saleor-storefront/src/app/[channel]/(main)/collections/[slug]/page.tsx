@@ -14,7 +14,7 @@ import { parseEditorJSToText } from "@/lib/editorjs";
 import { CategoryHero, transformToProductCard } from "@/ui/components/plp";
 import { buildSortVariables, buildFilterVariables } from "@/ui/components/plp/filter-utils";
 import { CollectionPageClient } from "./client";
-import type { SaleorLanguageCode } from "@/lib/saleor-language";
+import { type SaleorLanguageCode, asGraphQLLanguageCode } from "@/lib/saleor-language";
 import { getSaleorLanguageCode } from "@/lib/saleor-language.server";
 
 type CollectionNode = NonNullable<ProductListByCollectionQuery["collection"]>;
@@ -38,7 +38,7 @@ async function fetchCollectionHero(
 	mode: "dynamic" | "cached",
 ) {
 	const result = await executePublicGraphQL(ProductListByCollectionDocument, {
-		variables: { slug, channel, languageCode, first: 1 },
+		variables: { slug, channel, languageCode: asGraphQLLanguageCode(languageCode), first: 1 },
 		...(mode === "dynamic" ? { cache: "no-store" as const } : { revalidate: 300 }),
 	});
 
@@ -159,7 +159,7 @@ async function CollectionProducts({
 		variables: {
 			slug: params.slug,
 			channel: params.channel,
-			languageCode,
+			languageCode: asGraphQLLanguageCode(languageCode),
 			...paginationVariables,
 			sortBy,
 			filter,

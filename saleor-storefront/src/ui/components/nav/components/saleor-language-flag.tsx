@@ -5,6 +5,7 @@ const FLAG_SRC: Record<SaleorFlagCountryCode, string> = {
 	US: "/flags/us.svg",
 	BD: "/flags/bd.svg",
 	BH: "/flags/bh.svg",
+	AE: "/flags/ae.svg",
 };
 
 type Props = {

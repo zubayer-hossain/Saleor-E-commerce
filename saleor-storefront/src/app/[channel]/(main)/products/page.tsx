@@ -1,17 +1,20 @@
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
-import { ProductListPaginatedDocument } from "@/gql/graphql";
+import { ProductListPaginatedDocument, CategoriesForProductsFilterDocument } from "@/gql/graphql";
 import { executePublicGraphQL } from "@/lib/graphql";
 import { getPaginatedListVariables } from "@/lib/utils";
 import { CategoryHero, transformToProductCard } from "@/ui/components/plp";
-import { buildSortVariables, buildFilterVariables } from "@/ui/components/plp/filter-utils";
+import { buildSortVariables, buildFilterVariables, type CategoryOption } from "@/ui/components/plp/filter-utils";
 import { resolveCategorySlugsToIds } from "@/ui/components/plp/filter-utils.server";
 import { ProductsPageClient } from "./products-client";
 import { getSaleorLanguageCode } from "@/lib/saleor-language.server";
+import { asGraphQLLanguageCode } from "@/lib/saleor-language";
+import { brandConfig } from "@/config/brand";
+import { productsPageCatalogCopy } from "@/config/catalog-i18n";
 
 export const metadata = {
-	title: "Products · Saleor Storefront example",
-	description: "All products in Saleor Storefront example",
+	title: `Toy catalog · ${brandConfig.siteName}`,
+	description: `Browse ${brandConfig.siteName} toys — dolls, STEAM kits, outdoor play, and gifts with multilingual support.`,
 };
 
 type PageProps = {
@@ -33,18 +36,20 @@ type PageProps = {
  */
 export default async function Page(props: PageProps) {
 	const params = await props.params;
+	const languageCode = await getSaleorLanguageCode();
+	const catalogCopy = productsPageCatalogCopy[languageCode];
 
 	const breadcrumbs = [
-		{ label: "Home", href: `/${params.channel}` },
-		{ label: "Products", href: `/${params.channel}/products` },
+		{ label: catalogCopy.breadcrumbHome, href: `/${params.channel}` },
+		{ label: catalogCopy.breadcrumbProducts, href: `/${params.channel}/products` },
 	];
 
 	return (
 		<>
 			{/* Static shell - renders immediately */}
 			<CategoryHero
-				title="All Products"
-				description="Discover our full collection of premium products."
+				title={catalogCopy.heroTitle}
+				description={catalogCopy.heroDescription}
 				breadcrumbs={breadcrumbs}
 			/>
 			{/* Dynamic content - streams in via Suspense */}
@@ -66,15 +71,30 @@ async function ProductsContent({
 	searchParams: PageProps["searchParams"];
 }) {
 	const [params, searchParams] = await Promise.all([paramsPromise, searchParamsPromise]);
+	const languageCode = await getSaleorLanguageCode();
 
 	const paginationVariables = getPaginatedListVariables({ params: searchParams });
 	const sortBy = buildSortVariables(searchParams.sort);
 
 	// Parse category slugs from URL and resolve to IDs for server-side filtering
 	const categorySlugs = searchParams.categories?.split(",").filter(Boolean) || [];
-	const categoryMap = await resolveCategorySlugsToIds(categorySlugs);
+	const categoryMap = await resolveCategorySlugsToIds(categorySlugs, languageCode);
 	const categoryIds = Array.from(categoryMap.values()).map((c) => c.id);
-	const languageCode = await getSaleorLanguageCode();
+
+	const categoriesFilterResult = await executePublicGraphQL(CategoriesForProductsFilterDocument, {
+		variables: { first: 50, languageCode: asGraphQLLanguageCode(languageCode) },
+		revalidate: 300,
+	});
+
+	const catalogCategoryRows = categoriesFilterResult.ok ? categoriesFilterResult.data.categories?.edges : undefined;
+
+	const catalogCategoriesForFilter: CategoryOption[] =
+		catalogCategoryRows?.map(({ node }) => ({
+			id: node.id,
+			slug: node.slug,
+			name: node.translation?.name ?? node.name,
+			count: 0,
+		})) ?? [];
 
 	const filter = buildFilterVariables({
 		priceRange: searchParams.price,
@@ -85,7 +105,7 @@ async function ProductsContent({
 		variables: {
 			...paginationVariables,
 			channel: params.channel,
-			languageCode,
+			languageCode: asGraphQLLanguageCode(languageCode),
 			sortBy,
 			filter,
 		},
@@ -113,6 +133,7 @@ async function ProductsContent({
 			pageInfo={products.pageInfo}
 			totalCount={products.totalCount ?? productCards.length}
 			resolvedCategories={resolvedCategories}
+			catalogCategories={catalogCategoriesForFilter}
 		/>
 	);
 }

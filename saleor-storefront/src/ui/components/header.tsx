@@ -32,7 +32,7 @@ export async function Header({ channel }: { channel: string }) {
 	const saleorLang = await getSaleorLanguageCode();
 
 	return (
-		<header className="sticky top-0 z-40 border-b border-border bg-background">
+		<header className="sticky top-0 z-40 border-b border-border/80 bg-background/90 shadow-sm backdrop-blur-md supports-[backdrop-filter]:bg-background/75">
 			<div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
 				<div className="flex h-16 items-center justify-between gap-4">
 					{/* Logo - no Suspense needed (simple server component) */}

@@ -3,11 +3,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
-import {
-	SALEOR_LANGUAGE_COOKIE,
-	sanitizeSaleorLanguageCode,
-	type SaleorLanguageCode,
-} from "@/lib/saleor-language";
+import { SALEOR_LANGUAGE_COOKIE, sanitizeSaleorLanguageCode } from "@/lib/saleor-language";
 
 export async function setSaleorLanguageAction(formData: FormData) {
 	const code = sanitizeSaleorLanguageCode(String(formData.get("languageCode") ?? ""));

@@ -7,7 +7,7 @@ import xss from "xss";
 
 import { executePublicGraphQL } from "@/lib/graphql";
 import { ProductDetailsDocument, type ProductDetailsQuery } from "@/gql/graphql";
-import type { SaleorLanguageCode } from "@/lib/saleor-language";
+import { type SaleorLanguageCode, asGraphQLLanguageCode } from "@/lib/saleor-language";
 import { getSaleorLanguageCode } from "@/lib/saleor-language.server";
 import { buildPageMetadata, buildProductJsonLd } from "@/lib/seo";
 import { CACHE_PROFILES, applyCacheProfile } from "@/lib/cache-manifest";
@@ -33,7 +33,7 @@ async function fetchProductDetails(
 	const variables = {
 		slug: decodeURIComponent(slug),
 		channel,
-		languageCode,
+		languageCode: asGraphQLLanguageCode(languageCode),
 	};
 
 	const result =

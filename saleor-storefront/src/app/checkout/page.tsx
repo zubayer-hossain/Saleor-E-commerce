@@ -4,8 +4,8 @@ import { RootWrapper } from "./page-wrapper";
 import { Loader } from "@/ui/atoms/loader";
 
 export const metadata = {
-	title: "Checkout · Saleor Storefront example",
-	description: "Complete your purchase securely.",
+	title: "Checkout · ToyVerse",
+	description: "Complete your ToyVerse order securely.",
 };
 
 /**

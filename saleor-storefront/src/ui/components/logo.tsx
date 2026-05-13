@@ -1,5 +1,6 @@
 import { LinkWithChannel } from "../atoms/link-with-channel";
 import { Logo as SharedLogo } from "./shared/logo";
+import { brandConfig } from "@/config/brand";
 
 /**
  * Site logo with link to homepage.
@@ -8,7 +9,7 @@ import { Logo as SharedLogo } from "./shared/logo";
 export const Logo = () => {
 	return (
 		<LinkWithChannel href="/" className="flex shrink-0 items-center" aria-label="Homepage">
-			<SharedLogo className="h-7 w-auto" />
+			<SharedLogo className="h-8 w-auto" ariaLabel={brandConfig.logoAriaLabel} />
 		</LinkWithChannel>
 	);
 };

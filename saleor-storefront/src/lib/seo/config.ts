@@ -17,7 +17,7 @@ export const seoConfig = {
 	siteName: brandConfig.siteName,
 
 	/** Default site description */
-	description: brandConfig.tagline,
+	description: brandConfig.description,
 
 	/** Default locale for OG tags */
 	locale: localeConfig.ogLocale,

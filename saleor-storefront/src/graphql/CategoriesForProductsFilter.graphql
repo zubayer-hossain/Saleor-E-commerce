@@ -1,0 +1,15 @@
+# Root categories with localized names — used for /products filter dropdown (not limited to current page).
+query CategoriesForProductsFilter($first: Int!, $languageCode: LanguageCodeEnum!) {
+	categories(first: $first) {
+		edges {
+			node {
+				id
+				slug
+				name
+				translation(languageCode: $languageCode) {
+					name
+				}
+			}
+		}
+	}
+}

@@ -1,77 +1,74 @@
 /**
- * ========================================
- * SALEOR STOREFRONT - DESIGN TOKENS
- * ========================================
- *
- * This file defines the visual foundation of the storefront using
- * CSS custom properties. These tokens are consumed by Tailwind CSS
- * via the theme configuration in tailwind.config.ts.
- *
- * Color Format: OKLCH (Oklab Lightness Chroma Hue)
- * - Modern perceptually uniform color space
- * - Better for programmatic color manipulation
- * - Supported in all modern browsers
- *
- * Design System:
- * - Minimal e-commerce theme with warm neutrals
- * - Near-black for primary actions and headings
- * - Warm off-whites for backgrounds
- * - Red accent for destructive/sale indicators
- *
- * Typography:
- * - Geist font family (loaded via Next.js font system in layout.tsx)
- * - Font variables set on <html> element: --font-geist-sans, --font-geist-mono
+ * ToyVerse — colorful, premium playful ecommerce tokens (light-first).
+ * Uses OKLCH for consistent palette; primary is a vivid violet with coral accents.
  */
 
-/* ============================================
- * Light Theme (Default)
- * ============================================ */
 :root {
 	/* --- Backgrounds --- */
-	--background: oklch(0.98 0.005 90); /* Page background - warm off-white */
-	--card: oklch(1 0 0); /* Card surfaces - pure white */
-	--popover: oklch(1 0 0); /* Popover/dropdown backgrounds */
-	--secondary: oklch(0.96 0.003 90); /* Secondary surfaces */
-	--muted: oklch(0.94 0.003 90); /* Muted/disabled backgrounds */
-	--accent: oklch(0.94 0.003 90); /* Accent backgrounds */
+	--background: oklch(0.985 0.012 280); /* soft lilac-white */
+	--card: oklch(1 0 0);
+	--popover: oklch(1 0 0);
+	--secondary: oklch(0.965 0.02 300); /* lavender mist */
+	--muted: oklch(0.94 0.018 280);
+	--accent: oklch(0.94 0.05 330); /* playful pink tint */
 
-	/* --- Foregrounds (Text Colors) --- */
-	--foreground: oklch(0.12 0 0); /* Primary text - near black */
-	--card-foreground: oklch(0.12 0 0);
-	--popover-foreground: oklch(0.12 0 0);
-	--secondary-foreground: oklch(0.12 0 0);
-	--muted-foreground: oklch(0.45 0 0); /* Secondary/muted text */
-	--accent-foreground: oklch(0.12 0 0);
+	/* --- Foregrounds --- */
+	--foreground: oklch(0.22 0.05 280); /* deep violet-gray */
+	--card-foreground: oklch(0.22 0.05 280);
+	--popover-foreground: oklch(0.22 0.05 280);
+	--secondary-foreground: oklch(0.22 0.05 280);
+	--muted-foreground: oklch(0.48 0.03 280);
+	--accent-foreground: oklch(0.22 0.05 280);
 
-	/* --- Primary (CTA buttons, links) --- */
-	--primary: oklch(0.12 0 0); /* Near black */
-	--primary-foreground: oklch(0.98 0 0); /* White text on primary */
+	/* --- Primary CTA — lively violet --- */
+	--primary: oklch(0.52 0.22 295);
+	--primary-foreground: oklch(0.99 0.01 280);
 
-	/* --- Semantic Colors --- */
-	--destructive: oklch(0.55 0.2 25); /* Error/delete - red */
-	--destructive-foreground: oklch(0.98 0 0);
-	--success: oklch(0.55 0.15 145); /* Success - green */
-	--success-foreground: oklch(0.98 0 0);
+	/* --- Semantic --- */
+	--destructive: oklch(0.55 0.2 25);
+	--destructive-foreground: oklch(0.99 0 0);
+	--success: oklch(0.58 0.16 155);
+	--success-foreground: oklch(0.99 0 0);
 
-	/* --- Interactive Elements --- */
-	--border: oklch(0.9 0.003 90); /* Border color */
-	--input: oklch(0.9 0.003 90); /* Input borders */
-	--ring: oklch(0.12 0 0); /* Focus ring color */
+	/* --- Chrome --- */
+	--border: oklch(0.88 0.02 280);
+	--input: oklch(0.88 0.02 280);
+	--ring: oklch(0.52 0.22 295);
 
-	/* --- Layout --- */
-	--radius: 0.5rem; /* Base border radius (8px) */
+	/* --- Shape --- */
+	--radius: 0.75rem;
 
-	/* --- Skeleton Delay --- */
-	--skeleton-delay: 300ms; /* Delay before skeleton appears */
+	--skeleton-delay: 300ms;
 }
 
-/* ============================================
- * Delayed Skeleton Animation
- * ============================================
- * Prevents skeleton flash on fast loads.
- * Skeleton stays invisible for --skeleton-delay, then fades in.
- * If content loads before delay, skeleton is never seen.
- */
+.dark {
+	--background: oklch(0.16 0.04 280);
+	--card: oklch(0.2 0.045 280);
+	--popover: oklch(0.2 0.045 280);
+	--secondary: oklch(0.26 0.05 280);
+	--muted: oklch(0.26 0.05 280);
+	--accent: oklch(0.28 0.08 310);
+
+	--foreground: oklch(0.97 0.02 280);
+	--card-foreground: oklch(0.97 0.02 280);
+	--popover-foreground: oklch(0.97 0.02 280);
+	--secondary-foreground: oklch(0.97 0.02 280);
+	--muted-foreground: oklch(0.72 0.03 280);
+	--accent-foreground: oklch(0.97 0.02 280);
+
+	--primary: oklch(0.72 0.18 300);
+	--primary-foreground: oklch(0.15 0.05 280);
+
+	--destructive: oklch(0.5 0.18 25);
+	--destructive-foreground: oklch(0.98 0 0);
+	--success: oklch(0.68 0.15 155);
+	--success-foreground: oklch(0.15 0 0);
+
+	--border: oklch(0.32 0.04 280);
+	--input: oklch(0.32 0.04 280);
+	--ring: oklch(0.72 0.18 300);
+}
+
 @keyframes skeleton-fade-in {
 	from {
 		opacity: 0;
@@ -79,41 +76,4 @@
 	to {
 		opacity: 1;
 	}
-}
-
-/* ============================================
- * Dark Theme
- * Activated by adding .dark class to <html>
- * ============================================ */
-.dark {
-	/* --- Backgrounds --- */
-	--background: oklch(0.12 0 0);
-	--card: oklch(0.16 0 0);
-	--popover: oklch(0.16 0 0);
-	--secondary: oklch(0.22 0 0);
-	--muted: oklch(0.22 0 0);
-	--accent: oklch(0.22 0 0);
-
-	/* --- Foregrounds --- */
-	--foreground: oklch(0.98 0 0);
-	--card-foreground: oklch(0.98 0 0);
-	--popover-foreground: oklch(0.98 0 0);
-	--secondary-foreground: oklch(0.98 0 0);
-	--muted-foreground: oklch(0.65 0 0);
-	--accent-foreground: oklch(0.98 0 0);
-
-	/* --- Primary --- */
-	--primary: oklch(0.98 0 0);
-	--primary-foreground: oklch(0.12 0 0);
-
-	/* --- Semantic Colors --- */
-	--destructive: oklch(0.45 0.18 25);
-	--destructive-foreground: oklch(0.98 0 0);
-	--success: oklch(0.65 0.15 145);
-	--success-foreground: oklch(0.12 0 0);
-
-	/* --- Interactive Elements --- */
-	--border: oklch(0.26 0 0);
-	--input: oklch(0.26 0 0);
-	--ring: oklch(0.98 0 0);
 }

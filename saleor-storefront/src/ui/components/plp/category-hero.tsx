@@ -62,7 +62,7 @@ export function CategoryHero({ title, description, backgroundImage, breadcrumbs 
 				</nav>
 
 				<h1
-					className={`text-3xl font-semibold tracking-tight md:text-4xl lg:text-5xl ${
+					className={`font-display text-3xl font-semibold tracking-tight md:text-4xl lg:text-5xl ${
 						hasImage ? "text-background" : "text-foreground"
 					}`}
 				>

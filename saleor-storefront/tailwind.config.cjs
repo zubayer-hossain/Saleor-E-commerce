@@ -51,6 +51,7 @@ module.exports = {
 			},
 			fontFamily: {
 				sans: ["var(--font-geist-sans)", "system-ui", "sans-serif"],
+				display: ["var(--font-toyverse-display)", "var(--font-geist-sans)", "system-ui", "sans-serif"],
 				mono: ["var(--font-geist-mono)", "monospace"],
 			},
 			borderColor: {

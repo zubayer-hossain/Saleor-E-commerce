@@ -1,12 +1,19 @@
 import { ProductElement } from "./product-element";
 import { type ProductListItemFragment } from "@/gql/graphql";
+import { cn } from "@/lib/utils";
 
-export const ProductList = ({ products }: { products: readonly ProductListItemFragment[] }) => {
+export const ProductList = ({
+	products,
+	className,
+}: {
+	products: readonly ProductListItemFragment[];
+	className?: string;
+}) => {
 	return (
 		<ul
 			role="list"
 			data-testid="ProductList"
-			className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3"
+			className={cn("grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3", className)}
 		>
 			{products.map((product, index) => (
 				<ProductElement

@@ -4,6 +4,7 @@ import edjsHTML from "editorjs-html";
 import xss from "xss";
 import { PageGetBySlugDocument } from "@/gql/graphql";
 import { executePublicGraphQL } from "@/lib/graphql";
+import { brandConfig } from "@/config/brand";
 
 const parser = edjsHTML();
 
@@ -17,7 +18,7 @@ export const generateMetadata = async (props: { params: Promise<{ slug: string }
 	const page = result.ok ? result.data.page : null;
 
 	return {
-		title: `${page?.seoTitle || page?.title || "Page"} · Saleor Storefront example`,
+		title: `${page?.seoTitle || page?.title || "Page"} · ${brandConfig.siteName}`,
 		description: page?.seoDescription || page?.seoTitle || page?.title,
 	};
 };

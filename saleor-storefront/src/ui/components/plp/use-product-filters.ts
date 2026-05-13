@@ -21,6 +21,8 @@ interface UseProductFiltersOptions {
 	resolvedCategories?: Array<{ slug: string; id: string; name: string }>;
 	/** Whether to include category filter (only for /products page) */
 	enableCategoryFilter?: boolean;
+	/** All root categories (localized); merges into dropdown beyond categories present on this page */
+	catalogCategories?: CategoryOption[];
 }
 
 interface UseProductFiltersResult {
@@ -64,6 +66,7 @@ export function useProductFilters({
 	products,
 	resolvedCategories = [],
 	enableCategoryFilter = false,
+	catalogCategories,
 }: UseProductFiltersOptions): UseProductFiltersResult {
 	const router = useRouter();
 	const pathname = usePathname();
@@ -188,7 +191,12 @@ export function useProductFilters({
 	);
 
 	// Extract filter options from products
-	const categoryOptions = useMemo(() => extractCategoryOptions(products), [products]);
+	const categoryOptions = useMemo(() => {
+		if (!enableCategoryFilter) {
+			return extractCategoryOptions(products);
+		}
+		return extractCategoryOptions(products, catalogCategories);
+	}, [products, enableCategoryFilter, catalogCategories]);
 
 	const handleRemoveFilter = useCallback(
 		(key: string, value: string) => {

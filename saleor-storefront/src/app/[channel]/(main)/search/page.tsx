@@ -8,9 +8,11 @@ import { SearchSort } from "./search-sort";
 import { SearchIcon } from "lucide-react";
 import { getSaleorLanguageCode } from "@/lib/saleor-language.server";
 
+import { brandConfig } from "@/config/brand";
+
 export const metadata = {
-	title: "Search products · Saleor Storefront example",
-	description: "Search products in Saleor Storefront example",
+	title: `Search toys · ${brandConfig.siteName}`,
+	description: `Find dolls, games, and gifts across ${brandConfig.siteName}.`,
 };
 
 type SearchParams = {

@@ -8,7 +8,7 @@
 import { executePublicGraphQL } from "@/lib/graphql";
 import { SearchProductsDocument, OrderDirection, ProductOrderField } from "@/gql/graphql";
 import type { SearchProduct, SearchResult, SearchPagination } from "./types";
-import type { SaleorLanguageCode } from "@/lib/saleor-language";
+import { type SaleorLanguageCode, asGraphQLLanguageCode } from "@/lib/saleor-language";
 import { localeConfig } from "@/config/locale";
 
 interface SearchOptions {
@@ -47,7 +47,7 @@ export async function searchProducts(options: SearchOptions): Promise<SearchResu
 		variables: {
 			search: query,
 			channel,
-			languageCode,
+			languageCode: asGraphQLLanguageCode(languageCode),
 			sortBy: field,
 			sortDirection: order,
 			first: isBackward ? undefined : limit,

@@ -2,6 +2,7 @@
 
 import { Suspense } from "react";
 import { FilterBar, ProductGrid, useProductFilters, type ProductCardData } from "@/ui/components/plp";
+import type { CategoryOption } from "@/ui/components/plp/filter-utils";
 import { Pagination } from "@/ui/components/pagination";
 
 interface ProductsPageClientProps {
@@ -15,6 +16,8 @@ interface ProductsPageClientProps {
 	totalCount?: number;
 	/** Categories resolved from URL slugs (server-side) for active filter display */
 	resolvedCategories?: Array<{ slug: string; id: string; name: string }>;
+	/** Root categories for filter dropdown (localized), independent of current page slice */
+	catalogCategories?: CategoryOption[];
 }
 
 function PaginationSkeleton() {
@@ -26,7 +29,12 @@ function PaginationSkeleton() {
 	);
 }
 
-export function ProductsPageClient({ products, pageInfo, resolvedCategories = [] }: ProductsPageClientProps) {
+export function ProductsPageClient({
+	products,
+	pageInfo,
+	resolvedCategories = [],
+	catalogCategories = [],
+}: ProductsPageClientProps) {
 	const {
 		filteredProducts,
 		categoryOptions,
@@ -50,6 +58,7 @@ export function ProductsPageClient({ products, pageInfo, resolvedCategories = []
 		products,
 		resolvedCategories,
 		enableCategoryFilter: true,
+		catalogCategories,
 	});
 
 	return (

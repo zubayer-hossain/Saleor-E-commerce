@@ -94,8 +94,12 @@ export function buildSortVariables(sort: SortOption | string | undefined): Produ
 
 /**
  * Extract unique category options from products with counts.
+ * When ``catalogCategories`` is provided (full taxonomy), merge so every category appears with proper localized labels.
  */
-export function extractCategoryOptions(products: ProductCardData[]): CategoryOption[] {
+export function extractCategoryOptions(
+	products: ProductCardData[],
+	catalogCategories?: CategoryOption[],
+): CategoryOption[] {
 	const map = new Map<string, CategoryOption>();
 
 	for (const product of products) {
@@ -114,7 +118,24 @@ export function extractCategoryOptions(products: ProductCardData[]): CategoryOpt
 		}
 	}
 
-	return Array.from(map.values()).sort((a, b) => b.count - a.count);
+	if (catalogCategories?.length) {
+		for (const row of catalogCategories) {
+			const slug = row.slug;
+			const prev = map.get(slug);
+			if (prev) {
+				map.set(slug, { ...prev, name: row.name });
+			} else {
+				map.set(slug, {
+					id: row.id,
+					name: row.name,
+					slug,
+					count: 0,
+				});
+			}
+		}
+	}
+
+	return Array.from(map.values()).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
 }
 
 /**

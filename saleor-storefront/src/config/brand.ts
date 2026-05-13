@@ -1,65 +1,37 @@
 /**
- * Brand Configuration
- *
- * Centralized branding settings for the storefront.
- * Update these values when customizing for a new store.
- *
- * @example
- * ```tsx
- * import { brandConfig } from "@/config/brand";
- *
- * <title>{brandConfig.siteName}</title>
- * <p>© {new Date().getFullYear()} {brandConfig.copyrightHolder}</p>
- * ```
+ * ToyVerse demo brand configuration.
+ * Update these values when customizing for another store.
  */
 
 export const brandConfig = {
-	/** Site name used in titles, metadata, and headers */
-	siteName: "Saleor Store",
+	siteName: "ToyVerse",
 
-	/** Legal entity name for copyright notices */
-	copyrightHolder: "Saleor Demo Store",
+	copyrightHolder: "ToyVerse Demo",
 
-	/** Organization name for structured data (JSON-LD) */
-	organizationName: "Saleor Store",
+	organizationName: "ToyVerse",
 
-	/** Default brand name for products without a brand */
-	defaultBrand: "Saleor Store",
+	defaultBrand: "ToyVerse",
 
-	/** Tagline/description for the store */
-	tagline: "Premium products with exceptional quality. Discover our curated collection.",
+	tagline: "Where Play Meets Imagination",
 
-	/** Homepage meta description */
-	description: "Starter pack for building performant e-commerce experiences with Saleor.",
+	description:
+		"A playful children's toy shop demo — educational games, dolls, outdoor fun, and gifts shipped across Bahrain and the UAE.",
 
-	/** Logo aria-label for accessibility */
-	logoAriaLabel: "Store",
+	logoAriaLabel: "ToyVerse — home",
 
-	/** Title template - %s will be replaced with page title */
-	titleTemplate: "%s | Saleor Store",
+	titleTemplate: "%s | ToyVerse",
 
-	/** Social media handles */
 	social: {
-		/** Twitter/X handle (without @) - set to null to disable */
 		twitter: null as string | null,
-		/** Instagram handle (without @) - set to null to disable */
 		instagram: null as string | null,
-		/** Facebook page URL - set to null to disable */
 		facebook: null as string | null,
 	},
 } as const;
 
-/**
- * Helper to format page title using brand template.
- */
 export function formatPageTitle(title: string): string {
 	return brandConfig.titleTemplate.replace("%s", title);
 }
 
-/**
- * Get copyright text with specified year.
- * Use CopyrightText component for dynamic year in Server Components.
- */
 export function getCopyrightText(year: number = new Date().getFullYear()): string {
 	return `© ${year} ${brandConfig.copyrightHolder}. All rights reserved.`;
 }
