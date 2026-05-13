@@ -1,0 +1,135 @@
+services:
+  api:
+    image: ghcr.io/saleor/saleor:3.23
+    ports:
+      - 8000:8000
+    restart: unless-stopped
+    networks:
+      - saleor-backend-tier
+    stdin_open: true
+    tty: true
+    depends_on:
+      - db
+      - cache
+      - jaeger
+    volumes:
+      # shared volume between worker and api for media
+      - saleor-media:/app/media
+    env_file:
+      - common.env
+      - backend.env
+    environment:
+      - DASHBOARD_URL=http://localhost:9000/
+      - ALLOWED_HOSTS=localhost,127.0.0.1,api,host.docker.internal
+      # Allow GraphQL introspection from Docker services (e.g. storefront codegen)
+      - HTTP_IP_FILTER_ENABLED=False
+
+  dashboard:
+    image: ghcr.io/saleor/saleor-dashboard:3.23
+    ports:
+      - 9000:80
+    restart: unless-stopped
+
+  db:
+    image: library/postgres:15-alpine
+    ports:
+      # Host 5433 avoids conflict with local PostgreSQL (e.g. Laragon on 5432)
+      - 5433:5432
+    restart: unless-stopped
+    networks:
+      - saleor-backend-tier
+    volumes:
+      - saleor-db:/var/lib/postgresql/data
+      - ./replica_user.sql:/docker-entrypoint-initdb.d/replica_user.sql:ro,z
+    environment:
+      - POSTGRES_USER=saleor
+      - POSTGRES_PASSWORD=saleor
+
+  cache:
+    image: valkey/valkey:8.1-alpine
+    ports:
+      # Host 6380 avoids conflict with local Redis on 6379
+      - 6380:6379
+    restart: unless-stopped
+    networks:
+      - saleor-backend-tier
+    volumes:
+      - saleor-cache:/data
+
+  worker:
+    image: ghcr.io/saleor/saleor:3.23
+    command: celery -A saleor --app=saleor.celeryconf:app worker --loglevel=info -B
+    restart: unless-stopped
+    networks:
+      - saleor-backend-tier
+    env_file:
+      - common.env
+      - backend.env
+    depends_on:
+      - cache
+      - mailpit
+    volumes:
+      # shared volume between worker and api for media
+      - saleor-media:/app/media
+
+  jaeger:
+    image: jaegertracing/jaeger
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+      - "4318:4318"
+    restart: unless-stopped
+    networks:
+      - saleor-backend-tier
+    volumes:
+      - type: tmpfs
+        target: /tmp
+
+  mailpit:
+    image: axllent/mailpit
+    ports:
+      - 1025:1025 # smtp server
+      - 8025:8025 # web ui. Visit http://localhost:8025/ to check emails
+    restart: unless-stopped
+    networks:
+      - saleor-backend-tier
+
+  # Official Saleor Storefront (Next.js). Runs in Linux to avoid Windows native build issues (node-gyp).
+  storefront:
+    image: node:20-bookworm-slim
+    working_dir: /app
+    ports:
+      - "3000:3000"
+    volumes:
+      - ../saleor-storefront:/app
+    env_file:
+      - ../saleor-storefront/.env
+    environment:
+      # Must reach Saleor from inside this container (localhost here would be wrong)
+      NEXT_PUBLIC_SALEOR_API_URL: http://host.docker.internal:8000/graphql/
+      NEXT_PUBLIC_STOREFRONT_URL: http://localhost:3000
+      # NEXT_PUBLIC_DEFAULT_CHANNEL comes from saleor-storefront/.env (do not hardcode here)
+      # Reliable file watching when bind-mounting from Windows/macOS
+      WATCHPACK_POLLING: "true"
+      CHOKIDAR_USEPOLLING: "true"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - api
+    # Use `next dev` directly so lifecycle `predev` does not re-run GraphQL codegen on every boot (slow on bind mounts).
+    # After schema/query changes, run: docker compose run --rm --no-deps storefront sh -c "corepack enable && corepack prepare pnpm@10.13.1 --activate && pnpm run generate:all"
+    command: >
+      sh -c "corepack enable && corepack prepare pnpm@10.13.1 --activate &&
+      if [ ! -f node_modules/next/package.json ]; then pnpm install; fi &&
+      pnpm exec next dev --webpack --hostname 0.0.0.0 --port 3000"
+
+volumes:
+  saleor-db:
+    driver: local
+  saleor-cache:
+    driver: local
+  saleor-media:
+
+networks:
+  saleor-backend-tier:
+    driver: bridge
