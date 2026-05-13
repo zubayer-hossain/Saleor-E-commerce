@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ChevronDown, SlidersHorizontal, X } from "lucide-react";
 import { Button } from "@/ui/components/ui/button";
 import {
@@ -90,6 +90,20 @@ export function FilterBar({
 	onPriceRangeChange,
 }: FilterBarProps) {
 	const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+
+	const categoryTriggerSummary = useMemo(() => {
+		if (selectedCategories.length === 0) return null;
+		if (selectedCategories.length === 1) {
+			const slug = selectedCategories[0];
+			return categoryOptions.find((c) => c.slug === slug)?.name ?? slug;
+		}
+		return `${selectedCategories.length} selected`;
+	}, [selectedCategories, categoryOptions]);
+
+	const priceTriggerSummary = useMemo(() => {
+		if (!selectedPriceRange) return null;
+		return priceRanges.find((r) => r.value === selectedPriceRange)?.label ?? selectedPriceRange;
+	}, [selectedPriceRange, priceRanges]);
 
 	const hasFilters =
 		categoryOptions.length > 0 || colorOptions.length > 0 || sizeOptions.length > 0 || priceRanges.length > 0;
@@ -286,9 +300,13 @@ export function FilterBar({
 										className="hidden shrink-0 bg-transparent md:flex"
 									>
 										Category
-										{selectedCategories.length > 0 && (
-											<Badge variant="secondary" className="ml-2 h-5 px-1.5 py-0 text-xs">
-												{selectedCategories.length}
+										{categoryTriggerSummary !== null && (
+											<Badge
+												variant="secondary"
+												className="ml-2 h-5 max-w-[11rem] shrink truncate px-1.5 py-0 text-xs font-normal"
+												title={categoryTriggerSummary}
+											>
+												<span className="truncate">{categoryTriggerSummary}</span>
 											</Badge>
 										)}
 										<ChevronDown className="ml-1.5 h-4 w-4 opacity-50" />
@@ -396,9 +414,13 @@ export function FilterBar({
 										className="hidden shrink-0 bg-transparent md:flex"
 									>
 										Price
-										{selectedPriceRange && (
-											<Badge variant="secondary" className="ml-2 h-5 px-1.5 py-0 text-xs">
-												1
+										{priceTriggerSummary !== null && (
+											<Badge
+												variant="secondary"
+												className="ml-2 h-5 max-w-[10rem] shrink truncate px-1.5 py-0 text-xs font-normal"
+												title={priceTriggerSummary}
+											>
+												<span className="truncate">{priceTriggerSummary}</span>
 											</Badge>
 										)}
 										<ChevronDown className="ml-1.5 h-4 w-4 opacity-50" />

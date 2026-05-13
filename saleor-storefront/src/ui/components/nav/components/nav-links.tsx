@@ -3,52 +3,59 @@ import { NavLink } from "./nav-link";
 import { executePublicGraphQL } from "@/lib/graphql";
 import { MenuGetBySlugDocument } from "@/gql/graphql";
 import { CACHE_PROFILES, applyCacheProfile } from "@/lib/cache-manifest";
+import { getSaleorLanguageCode } from "@/lib/saleor-language.server";
+import { type SaleorLanguageCode, asGraphQLLanguageCode } from "@/lib/saleor-language";
+import { navChromeCopy } from "@/config/catalog-i18n";
 
-export const NavLinks = async ({ channel }: { channel: string }) => {
+async function CachedNavLinks({ channel, languageCode }: { channel: string; languageCode: SaleorLanguageCode }) {
 	"use cache";
 	applyCacheProfile(CACHE_PROFILES.navigation);
 
+	const allLabel = navChromeCopy[languageCode].allProducts;
+
 	const result = await executePublicGraphQL(MenuGetBySlugDocument, {
-		variables: { slug: "navbar", channel },
+		variables: { slug: "navbar", channel, languageCode: asGraphQLLanguageCode(languageCode) },
 		revalidate: 60 * 60, // 1 hour
 	});
 
 	if (!result.ok) {
-		// During build, if the API is unreachable, render minimal nav.
-		// The page will re-fetch when a user visits.
 		console.warn(`[NavLinks] Failed to fetch navigation for ${channel}:`, result.error.message);
-		return <NavLink href="/products">All</NavLink>;
+		return <NavLink href="/products">{allLabel}</NavLink>;
 	}
 
 	return (
 		<>
-			<NavLink href="/products">All</NavLink>
+			<NavLink href="/products">{allLabel}</NavLink>
 			{result.data.menu?.items?.map((item) => {
 				if (item.category) {
+					const label = item.category.translation?.name ?? item.category.name;
 					return (
 						<NavLink key={item.id} href={`/categories/${item.category.slug}`}>
-							{item.category.name}
+							{label}
 						</NavLink>
 					);
 				}
 				if (item.collection) {
+					const label = item.collection.translation?.name ?? item.collection.name;
 					return (
 						<NavLink key={item.id} href={`/collections/${item.collection.slug}`}>
-							{item.collection.name}
+							{label}
 						</NavLink>
 					);
 				}
 				if (item.page) {
+					const title = item.page.translation?.title ?? item.page.title;
 					return (
 						<NavLink key={item.id} href={`/pages/${item.page.slug}`}>
-							{item.page.title}
+							{title}
 						</NavLink>
 					);
 				}
 				if (item.url) {
+					const label = item.translation?.name ?? item.name;
 					return (
 						<Link key={item.id} href={item.url} prefetch={false}>
-							{item.name}
+							{label}
 						</Link>
 					);
 				}
@@ -56,4 +63,9 @@ export const NavLinks = async ({ channel }: { channel: string }) => {
 			})}
 		</>
 	);
-};
+}
+
+export async function NavLinks({ channel }: { channel: string }) {
+	const languageCode = await getSaleorLanguageCode();
+	return <CachedNavLinks channel={channel} languageCode={languageCode} />;
+}
