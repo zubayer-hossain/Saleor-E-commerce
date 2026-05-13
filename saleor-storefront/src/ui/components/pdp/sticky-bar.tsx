@@ -31,16 +31,18 @@ interface StickyBarProps {
 	productName: string;
 	price: string;
 	show?: boolean;
+	/** Keep in sync with the main Add-to-cart primary button — do not omit or it can submit when the main button is disabled. */
+	disabled?: boolean;
 }
 
-function StickyAddButton() {
+function StickyAddButton({ disabled }: { disabled?: boolean }) {
 	const { pending } = useFormStatus();
 
 	return (
 		<Button
 			type="submit"
 			size="lg"
-			disabled={pending}
+			disabled={disabled || pending}
 			className={cn(
 				"min-w-[130px] shrink-0",
 				// Override transition to prevent flash on state change
@@ -53,7 +55,7 @@ function StickyAddButton() {
 	);
 }
 
-export function StickyBar({ productName, price, show = false }: StickyBarProps) {
+export function StickyBar({ productName, price, show = false, disabled = false }: StickyBarProps) {
 	const scrolledPastThreshold = useSyncExternalStore(
 		subscribeToScroll,
 		getScrollSnapshot,
@@ -75,7 +77,7 @@ export function StickyBar({ productName, price, show = false }: StickyBarProps) 
 					<p className="truncate font-medium">{productName}</p>
 					<p className="text-sm text-muted-foreground">{price}</p>
 				</div>
-				<StickyAddButton />
+				<StickyAddButton disabled={disabled} />
 			</div>
 		</div>
 	);

@@ -10,6 +10,8 @@ Environment:
   SALEOR_API_URL            GraphQL endpoint (default: http://localhost:8000/graphql/)
   SALEOR_APP_TOKEN          Bearer token from Dashboard → Apps / extension
   TOYVERSE_CHANNEL_SLUG     Channel slug (default: default-channel)
+  TOYVERSE_WAREHOUSE_SLUG   Optional exact warehouse slug to receive variant stock (e.g. default-warehouse)
+  TOYVERSE_WAREHOUSE_SLUGS  Optional comma-separated list; first existing slug wins (after TOYVERSE_WAREHOUSE_SLUG if set)
   TOYVERSE_PRODUCT_TYPE_SLUG Optional. If set, every seeded product uses this Saleor product type slug (overrides per-category map).
   TOYVERSE_FALLBACK_PRODUCT_TYPE_SLUG Optional. When a mapped type is missing in Saleor (e.g. minimal DB has only shirt/shoe), try this slug first before built-in fallbacks.
   TOYVERSE_CATEGORY_PRODUCT_TYPES_JSON Optional JSON object: {"educational-toys":"shirt","baby-toys":"shoe", ...}
@@ -21,6 +23,9 @@ Environment:
   TOYVERSE_MENU_LINK_ORIGIN Optional absolute storefront origin for footer Help links (default http://127.0.0.1:3000).
                                Saleor requires valid http(s) URLs; paths become {origin}/{channel}/...
   TOYVERSE_ATTACH_MEDIA_ON_REUSE Optional. Default on: when a product slug already exists, attach demo image if the product has no media (reuse skips full create flow otherwise).
+                               On reuse, ToyVerse also sets stock on the resolved primary warehouse (parity with fresh productVariantCreate) unless TOYVERSE_SKIP_STOCK_SYNC_ON_REUSE=1.
+  TOYVERSE_SKIP_STOCK_SYNC_ON_REUSE Optional. If "1", skip productVariantStocksUpdate when reusing an existing product slug (old behavior — warehouse env had no effect on re-runs).
+  TOYVERSE_VARIANT_STOCK_QUANTITY Demo quantity passed to variant stock APIs (default 120).
   TOYVERSE_REPAIR_PRODUCT_TYPES Optional. If "1", when slug reuse finds wrong Saleor product type vs seed map, delete that product and recreate (fixes older runs stuck on Audiobook).
   TOYVERSE_NAVBAR_CATEGORY_SLUGS Optional comma-separated category slugs for the header menu only (footer keeps full list).
                                Use * or all for every seeded category. Default if unset: educational-toys,baby-toys,board-games,outdoor-toys.
@@ -56,6 +61,15 @@ ATTACH_MEDIA_ON_REUSE = os.environ.get("TOYVERSE_ATTACH_MEDIA_ON_REUSE", "1").st
     "false",
     "no",
 )
+SKIP_STOCK_SYNC_ON_REUSE = os.environ.get("TOYVERSE_SKIP_STOCK_SYNC_ON_REUSE", "").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+try:
+    SEED_VARIANT_STOCK_QTY = max(0, int(os.environ.get("TOYVERSE_VARIANT_STOCK_QUANTITY", "120").strip() or "120"))
+except ValueError:
+    SEED_VARIANT_STOCK_QTY = 120
 
 EDITOR_VERSION = "2.24.3"
 
@@ -937,7 +951,7 @@ def create_product_flow(
                 "sku": sku,
                 "trackInventory": True,
                 "attributes": attr_inputs,
-                "stocks": [{"warehouse": warehouse_id, "quantity": 120}],
+                "stocks": [{"warehouse": warehouse_id, "quantity": SEED_VARIANT_STOCK_QTY}],
             },
         },
     )
@@ -998,6 +1012,116 @@ def create_product_flow(
     return pid
 
 
+def sync_product_variants_stock_to_warehouse(product_id: str, warehouse_id: str, quantity: int) -> None:
+    """Set ``quantity`` in ``warehouse_id`` for every variant via productVariantStocksUpdate (slug-reuse parity)."""
+    if quantity <= 0:
+        return
+    q_vars = """
+    query Pvars($id: ID!) {
+      product(id: $id) {
+        variants {
+          id
+          sku
+        }
+      }
+    }
+    """
+    data = gql(q_vars, {"id": product_id})
+    prod = data.get("product")
+    if not prod:
+        return
+    variants = prod.get("variants") or []
+    if not variants:
+        return
+    m_stocks = """
+    mutation PVStocks($variantId: ID!, $stocks: [StockInput!]!) {
+      productVariantStocksUpdate(variantId: $variantId, stocks: $stocks) {
+        productVariant { id }
+        errors { field code message }
+      }
+    }
+    """
+    for v in variants:
+        data = gql(
+            m_stocks,
+            {
+                "variantId": v["id"],
+                "stocks": [{"warehouse": warehouse_id, "quantity": quantity}],
+            },
+        )
+        errs = mutation_errors(data, "productVariantStocksUpdate")
+        if errs:
+            print(f"  productVariantStocksUpdate SKU={v.get('sku')!r}:", errs, file=sys.stderr)
+
+
+def pick_primary_warehouse_id() -> str:
+    """Choose a warehouse for variant stock — do not blindly use warehouses(first:N)[0].
+
+    PopulateDB/Dashboard setups often put **Oceania** first; channel shipping zones for a local
+    ``shop`` channel usually fulfill from **Default** warehouses instead, so storefront checkout
+    saw "0 remaining" despite stock on Oceania.
+
+    Priority:
+      1. ``TOYVERSE_WAREHOUSE_SLUG`` (single) or ``TOYVERSE_WAREHOUSE_SLUGS`` (comma list, first match)
+      2. Otherwise pick the warehouse that best matches slug/name hints (``default``, ``warehouse``,
+         ``click``, ``collect``) and **deprioritize** ``oceania``.
+    """
+
+    slug_override = os.environ.get("TOYVERSE_WAREHOUSE_SLUG", "").strip()
+    list_override = os.environ.get("TOYVERSE_WAREHOUSE_SLUGS", "").strip()
+
+    overrides: list[str] = []
+    if slug_override:
+        overrides.append(slug_override)
+    if list_override:
+        overrides.extend([s.strip() for s in list_override.split(",") if s.strip()])
+
+    wh_data = gql("{ warehouses(first: 50) { edges { node { id slug name } } } }")
+    edges = wh_data["warehouses"]["edges"]
+    if not edges:
+        raise SystemExit("No warehouses found. Create one in Dashboard.")
+    nodes: list[dict[str, Any]] = [e["node"] for e in edges]
+
+    if overrides:
+        by_slug = {(n["slug"] or "").lower(): n["id"] for n in nodes}
+        for want in overrides:
+            wid = by_slug.get(want.lower())
+            if wid:
+                print(f"  warehouse (explicit): slug={want!r}")
+                return wid
+        known = sorted(by_slug.keys())
+        raise SystemExit(
+            "No warehouse matches TOYVERSE_WAREHOUSE_SLUG(S)="
+            + repr(overrides)
+            + f". Existing slugs: {known}",
+        )
+
+    def score_wh(n: dict[str, Any]) -> tuple[int, str]:
+        slug = (n.get("slug") or "").lower()
+        name = (n.get("name") or "").lower()
+        s = 0
+        if "oceania" in slug or "oceania" in name:
+            s -= 300
+        for token in ("default", "click", "collect", "central", "main"):
+            if token in slug or token in name:
+                s += 40
+        # plain "warehouse" word — weaker than explicit default
+        if "warehouse" in slug or "warehouse" in name:
+            s += 20
+        return (s, slug)
+
+    chosen = max(nodes, key=score_wh)
+    print(
+        "  warehouse (auto): slug="
+        + repr(chosen.get("slug"))
+        + " name="
+        + repr(chosen.get("name"))
+        + " (set TOYVERSE_WAREHOUSE_SLUG to pin another)",
+        file=sys.stderr,
+    )
+    return chosen["id"]
+
+
 def build_products() -> list[dict[str, Any]]:
     toys: list[dict[str, Any]] = []
     idx = 0
@@ -1047,11 +1171,7 @@ def main() -> None:
     if not channel_id:
         raise SystemExit(f"Active channel slug not found: {CHANNEL_SLUG}")
 
-    wh_data = gql("{ warehouses(first: 5) { edges { node { id slug name } } } }")
-    wh_edges = wh_data["warehouses"]["edges"]
-    if not wh_edges:
-        raise SystemExit("No warehouses found. Create one in Dashboard.")
-    warehouse_id = wh_edges[0]["node"]["id"]
+    warehouse_id = pick_primary_warehouse_id()
 
     pt_query = """
     query PT {
@@ -1219,6 +1339,12 @@ def main() -> None:
                                 ("AR_AE", t["name_ar"], desc_ar),
                             ],
                         )
+                        if not SKIP_STOCK_SYNC_ON_REUSE:
+                            sync_product_variants_stock_to_warehouse(
+                                existing,
+                                warehouse_id,
+                                SEED_VARIANT_STOCK_QTY,
+                            )
                         print(
                             f"  product reuse {sku} {t['slug']} — slug exists, keeping product id for collections.",
                             file=sys.stderr,

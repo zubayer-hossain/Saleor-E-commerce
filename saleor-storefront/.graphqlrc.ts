@@ -7,7 +7,7 @@
  * Run `pnpm run generate` after modifying any `.graphql` file in `src/graphql/`.
  *
  * ## What it does
- * 1. Connects to the Saleor API (via NEXT_PUBLIC_SALEOR_API_URL)
+ * 1. Loads the Saleor GraphQL schema (see schema resolution below)
  * 2. Reads all `.graphql` files from `src/graphql/`
  * 3. Generates typed documents in `src/gql/`
  *
@@ -21,17 +21,26 @@ import type { CodegenConfig } from "@graphql-codegen/cli";
 
 loadEnvConfig(process.cwd());
 
-let schemaUrl = process.env.NEXT_PUBLIC_SALEOR_API_URL;
-
-if (process.env.GITHUB_ACTION === "generate-schema-from-file") {
-	schemaUrl = "schema.graphql";
+function resolveCodegenSchemaUrl(): string {
+	if (process.env.GITHUB_ACTION === "generate-schema-from-file") {
+		return "schema.graphql";
+	}
+	const explicit = process.env.GRAPHQL_CODEGEN_SCHEMA_URL?.trim();
+	if (explicit) return explicit;
+	/** Server-reachable URL (e.g. `http://api:8000/graphql/` in Docker Compose) — not for the browser. */
+	const server = process.env.SALEOR_API_SERVER_URL?.trim();
+	if (server) return server;
+	const publicUrl = process.env.NEXT_PUBLIC_SALEOR_API_URL?.trim();
+	if (publicUrl) return publicUrl;
+	return "";
 }
+
+const schemaUrl = resolveCodegenSchemaUrl();
 
 if (!schemaUrl) {
 	console.error(
-		"Before GraphQL types can be generated, you need to set NEXT_PUBLIC_SALEOR_API_URL environment variable.",
+		"GraphQL codegen: set NEXT_PUBLIC_SALEOR_API_URL, or SALEOR_API_SERVER_URL / GRAPHQL_CODEGEN_SCHEMA_URL (Docker: use the Saleor hostname the Node process can reach, e.g. http://api:8000/graphql/).",
 	);
-	console.error("Follow development instructions in the README.md file.");
 	process.exit(1);
 }
 

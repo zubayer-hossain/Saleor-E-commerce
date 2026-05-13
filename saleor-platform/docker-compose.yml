@@ -104,22 +104,26 @@ services:
       - ../saleor-storefront:/app
     env_file:
       - ../saleor-storefront/.env
+    networks:
+      - saleor-backend-tier
     environment:
-      # Must reach Saleor from inside this container (localhost here would be wrong)
-      NEXT_PUBLIC_SALEOR_API_URL: http://host.docker.internal:8000/graphql/
+      # Browser runs on the host — must use a URL the host can reach (Saleor published on localhost:8000).
+      NEXT_PUBLIC_SALEOR_API_URL: http://127.0.0.1:8000/graphql/
+      # Next.js server + GraphQL codegen run in this container — use the Compose service name.
+      SALEOR_API_SERVER_URL: http://api:8000/graphql/
       NEXT_PUBLIC_STOREFRONT_URL: http://localhost:3000
       # NEXT_PUBLIC_DEFAULT_CHANNEL comes from saleor-storefront/.env (do not hardcode here)
       # Reliable file watching when bind-mounting from Windows/macOS
       WATCHPACK_POLLING: "true"
       CHOKIDAR_USEPOLLING: "true"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     depends_on:
       - api
     # Use `next dev` directly so lifecycle `predev` does not re-run GraphQL codegen on every boot (slow on bind mounts).
-    # After schema/query changes, run: docker compose run --rm --no-deps storefront sh -c "corepack enable && corepack prepare pnpm@10.13.1 --activate && pnpm run generate:all"
+    # After changing `src/graphql/**/*.graphql`, run codegen from the repo root:
+    #   docker compose run --rm --no-deps storefront sh -lc "corepack enable && corepack prepare pnpm@10.28.1 --activate && cd /app && pnpm install && pnpm run generate:all"
+    # (`pnpm run generate:all` uses SALEOR_API_SERVER_URL so introspection reaches `api`.)
     command: >
-      sh -c "corepack enable && corepack prepare pnpm@10.13.1 --activate &&
+      sh -c "corepack enable && corepack prepare pnpm@10.28.1 --activate &&
       if [ ! -f node_modules/next/package.json ]; then pnpm install; fi &&
       pnpm exec next dev --webpack --hostname 0.0.0.0 --port 3000"
 

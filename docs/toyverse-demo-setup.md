@@ -66,7 +66,10 @@ Optional environment variables:
 | `TOYVERSE_MENU_LINK_ORIGIN` | Storefront origin for footer Help links, e.g. `http://localhost:3000` (Saleor rejects bare `/shipping`). Final URLs: `{origin}/{channel}/path`. |
 | `TOYVERSE_ATTACH_MEDIA_ON_REUSE` | Default **on**. When seed hits existing slugs (`TV-*`), attach demo image if product has **no** media (reuse skips `productCreate`, so images were missing before). |
 | `TOYVERSE_REPAIR_PRODUCT_TYPES` | Set to `1` to **delete and recreate** any reused product whose Saleor product type slug does not match what the seed expects (e.g. fixes catalog stuck on **Audiobook** after an older run). |
-| `TOYVERSE_NAVBAR_CATEGORY_SLUGS` | Header **navbar** categories only: comma-separated ToyVerse category **slugs**, or `*` / `all` for every seeded category (footer still lists all). If unset, defaults to `educational-toys`, `baby-toys`, `board-games`, `outdoor-toys`. |
+| `TOYVERSE_WAREHOUSE_SLUG` | Pin stock to one warehouse by **slug** (e.g. `default-warehouse`). Use when auto-pick is wrong. |
+| `TOYVERSE_WAREHOUSE_SLUGS` | Comma-separated slugs; **first match wins** (after `TOYVERSE_WAREHOUSE_SLUG` if set). |
+| `TOYVERSE_SKIP_STOCK_SYNC_ON_REUSE` | If `1`, skip `productVariantStocksUpdate` when a product slug already exists (defaults to syncing so re-runs apply your warehouse choice). |
+| `TOYVERSE_VARIANT_STOCK_QUANTITY` | Integer demo quantity per variant per warehouse API call (default `120`). |
 
 ```powershell
 cd saleor-platform
@@ -79,12 +82,12 @@ python scripts/toyverse_seed.py
 The script:
 
 - Ensures **8 toy categories** with **English rich descriptions + SEO**, plus BN / Arabic (BH + AE) translations (slug-stable)
-- Creates **40 demo toys** (5 per category) with **Editor.js descriptions**, **SEO**, **`productMediaCreate` demo images**, SKUs `TV-*`, inventory in the first warehouse
+- Creates **40 demo toys** (5 per category) with **Editor.js descriptions**, **SEO**, **`productMediaCreate` demo images**, SKUs `TV-*`, inventory in a **channel-sensible** warehouse (prefers slugs/names like **Default** / **click & collect** over **Oceania**; override with `TOYVERSE_WAREHOUSE_SLUG`)
 - Assigns a **Saleor product type per toy category** (variant slugs like `shirt` for **Top**, `beanie` for **Beanies & Scarfs**) — override via env or JSON; set `TOYVERSE_PRODUCT_TYPE_SLUG` to force one type for all
 - Ensures collections **`featured-products`** and **`best-sellers`** and assigns products for homepage sections
 - Clears and rebuilds **`navbar`** (collections + **default subset** of toy categories; use `TOYVERSE_NAVBAR_CATEGORY_SLUGS` for full list or a custom subset) and **`footer`** (category columns, collections, help links + BN/AR menu translations)
 
-**Re-running:** Set `TOYVERSE_REPAIR_PRODUCT_TYPES=1` (plus app permissions) to delete/recreate rows stuck on the wrong Saleor type (including **Audiobook**). Otherwise reuse keeps existing products; the seed still **refreshes BN / Arabic product translations** and demo images when missing.
+**Re-running:** Set `TOYVERSE_REPAIR_PRODUCT_TYPES=1` (plus app permissions) to delete/recreate rows stuck on the wrong Saleor type (including **Audiobook**). Otherwise reuse keeps existing products; the seed still **refreshes BN / Arabic product translations** and demo images when missing, and **updates variant stock** on the resolved primary warehouse via `productVariantStocksUpdate` (so `TOYVERSE_WAREHOUSE_SLUG` takes effect on re-seed). Stock lives in Saleor’s stock tables (e.g. `stock_stock` — not the `warehouse_warehouse` row itself).
 
 **Storefront languages:** In Dashboard → Channel settings, enable **BN_BD**, **AR_BH**, and **AR_AE** (and English) so Saleor returns translations for menus, categories, and products.
 

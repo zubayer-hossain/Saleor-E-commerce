@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { executeAuthenticatedGraphQL } from "@/lib/graphql";
+import { executePublicGraphQL } from "@/lib/graphql";
 import { CheckoutDeleteLinesDocument } from "@/gql/graphql";
 import * as Checkout from "@/lib/checkout";
 
@@ -11,21 +11,27 @@ type deleteLineFromCheckoutArgs = {
 };
 
 export const deleteLineFromCheckout = async ({ lineId, checkoutId }: deleteLineFromCheckoutArgs) => {
-	const result = await executeAuthenticatedGraphQL(CheckoutDeleteLinesDocument, {
+	const result = await executePublicGraphQL(CheckoutDeleteLinesDocument, {
 		variables: {
 			checkoutId,
 			lineIds: [lineId],
 		},
-		cache: "no-cache",
+		cache: "no-store",
 	});
 
-	// If cart is now empty, clear the checkout cookie to start fresh next time
 	if (result.ok) {
-		const checkout = result.data.checkoutLinesDelete?.checkout;
-		if (checkout && checkout.lines.length === 0) {
-			await Checkout.clearCheckoutCookie(checkout.channel.slug);
+		const deletePayload = result.data.checkoutLinesDelete;
+		if (deletePayload?.errors?.length) {
+			return;
+		}
+		const checkout = deletePayload?.checkout;
+		const slug = checkout?.channel.slug;
+		if (slug && checkout?.lines) {
+			revalidatePath(`/${slug}`, "layout");
+			revalidatePath(`/${slug}/cart`);
+			if (checkout.lines.length === 0) {
+				await Checkout.clearCheckoutCookie(slug);
+			}
 		}
 	}
-
-	revalidatePath("/cart");
 };

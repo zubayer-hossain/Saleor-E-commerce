@@ -1,4 +1,5 @@
 import { type TypedDocumentString } from "../gql/graphql";
+import { getSaleorGraphQLUrlServer } from "@/lib/saleor-api-url";
 
 // ============================================================================
 // Result Types - Explicit error handling without exceptions
@@ -213,8 +214,10 @@ async function fetchWithRetry(
 	operationName: string,
 	variablesForLog?: string,
 ): Promise<FetchResult> {
-	const url = process.env.NEXT_PUBLIC_SALEOR_API_URL;
-	if (!url) {
+	let url: string;
+	try {
+		url = getSaleorGraphQLUrlServer();
+	} catch {
 		return networkError("Missing NEXT_PUBLIC_SALEOR_API_URL env variable");
 	}
 
@@ -227,7 +230,9 @@ async function fetchWithRetry(
 			if (withAuth) {
 				try {
 					const { getServerAuthClient } = await import("@/lib/auth/server");
-					response = await (await getServerAuthClient()).fetchWithAuth(url, input);
+					response = await (await getServerAuthClient()).fetchWithAuth(url, input, {
+						allowPassingTokenToThirdPartyDomains: true,
+					});
 				} catch (authError) {
 					const isDynamicServerError =
 						authError instanceof Error &&
@@ -411,8 +416,10 @@ interface RawGraphQLOptions {
  * }
  */
 export async function executeRawGraphQL<T = unknown>(options: RawGraphQLOptions): Promise<GraphQLResult<T>> {
-	const url = process.env.NEXT_PUBLIC_SALEOR_API_URL;
-	if (!url) {
+	let url: string;
+	try {
+		url = getSaleorGraphQLUrlServer();
+	} catch {
 		return networkError("Missing NEXT_PUBLIC_SALEOR_API_URL env variable");
 	}
 

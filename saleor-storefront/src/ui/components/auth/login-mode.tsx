@@ -60,8 +60,13 @@ export function LoginMode() {
 				router.push(`/${params.channel}`);
 				router.refresh();
 			}
-		} catch {
-			setError("An error occurred. Please try again.");
+		} catch (cause) {
+			console.error("[login] signIn failed:", cause);
+			setError(
+				process.env.NODE_ENV === "development" && cause instanceof Error
+					? cause.message
+					: "An error occurred. Please try again.",
+			);
 		} finally {
 			setIsSubmitting(false);
 		}

@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { invariant } from "ts-invariant";
 import { RootWrapper } from "./page-wrapper";
 import { Loader } from "@/ui/atoms/loader";
+import { getSaleorGraphQLUrlForBrowser } from "@/lib/saleor-api-url";
 
 export const metadata = {
 	title: "Checkout · ToyVerse",
@@ -31,13 +32,14 @@ async function CheckoutContent({
 	searchParams: Promise<{ checkout?: string; order?: string }>;
 }) {
 	const searchParams = await searchParamsPromise;
-	invariant(process.env.NEXT_PUBLIC_SALEOR_API_URL, "Missing NEXT_PUBLIC_SALEOR_API_URL env variable");
+	const publicApiUrl = process.env.NEXT_PUBLIC_SALEOR_API_URL;
+	invariant(publicApiUrl, "Missing NEXT_PUBLIC_SALEOR_API_URL env variable");
 
 	if (!searchParams.checkout && !searchParams.order) {
 		return null;
 	}
 
-	return <RootWrapper saleorApiUrl={process.env.NEXT_PUBLIC_SALEOR_API_URL} />;
+	return <RootWrapper saleorApiUrl={getSaleorGraphQLUrlForBrowser(publicApiUrl)} />;
 }
 
 function CheckoutSkeleton() {

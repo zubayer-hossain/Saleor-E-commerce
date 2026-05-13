@@ -1,44 +1,54 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { executeAuthenticatedGraphQL } from "@/lib/graphql";
+import { executePublicGraphQL } from "@/lib/graphql";
 import { CheckoutDeleteLinesDocument, CheckoutLinesUpdateDocument } from "@/gql/graphql";
 import * as Checkout from "@/lib/checkout";
 
+function revalidateCartShell(channelSlug: string) {
+	revalidatePath(`/${channelSlug}`, "layout");
+	revalidatePath(`/${channelSlug}/cart`);
+}
+
 export async function deleteCartLine(checkoutId: string, lineId: string) {
-	const result = await executeAuthenticatedGraphQL(CheckoutDeleteLinesDocument, {
+	const result = await executePublicGraphQL(CheckoutDeleteLinesDocument, {
 		variables: {
 			checkoutId,
 			lineIds: [lineId],
 		},
-		cache: "no-cache",
+		cache: "no-store",
 	});
 
-	// If cart is now empty, clear the checkout cookie to start fresh next time
 	if (result.ok) {
-		const checkout = result.data.checkoutLinesDelete?.checkout;
-		if (checkout && checkout.lines.length === 0) {
-			await Checkout.clearCheckoutCookie(checkout.channel.slug);
+		const deletePayload = result.data.checkoutLinesDelete;
+		if (deletePayload?.errors?.length) {
+			return;
+		}
+		const checkout = deletePayload?.checkout;
+		const slug = checkout?.channel.slug;
+		if (slug && checkout?.lines) {
+			revalidateCartShell(slug);
+			if (checkout.lines.length === 0) {
+				await Checkout.clearCheckoutCookie(slug);
+			}
 		}
 	}
-
-	revalidatePath("/cart");
-	revalidatePath("/");
 }
 
-export async function updateCartLineQuantity(checkoutId: string, lineId: string, quantity: number) {
+export async function updateCartLineQuantity(checkoutId: string, lineId: string, quantity: number, channel: string) {
 	if (quantity < 1) {
 		return deleteCartLine(checkoutId, lineId);
 	}
 
-	await executeAuthenticatedGraphQL(CheckoutLinesUpdateDocument, {
+	const result = await executePublicGraphQL(CheckoutLinesUpdateDocument, {
 		variables: {
 			checkoutId,
 			lines: [{ lineId, quantity }],
 		},
-		cache: "no-cache",
+		cache: "no-store",
 	});
 
-	revalidatePath("/cart");
-	revalidatePath("/");
+	if (result.ok && !result.data.checkoutLinesUpdate?.errors?.length) {
+		revalidateCartShell(channel);
+	}
 }

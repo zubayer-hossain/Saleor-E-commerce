@@ -2,6 +2,7 @@ fragment VariantDetails on ProductVariant {
 	id
 	name
 	sku
+	trackInventory
 	quantityAvailable
 	selectionAttributes: attributes(variantSelection: VARIANT_SELECTION) {
 		values {

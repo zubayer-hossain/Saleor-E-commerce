@@ -2,11 +2,8 @@ import "server-only";
 
 import { createSaleorAuthClient } from "@saleor/auth-sdk";
 import { cookies } from "next/headers";
-import { invariant } from "ts-invariant";
 import { ACCESS_TOKEN_MAX_AGE, REFRESH_TOKEN_MAX_AGE, encodeCookieName } from "./constants";
-
-const saleorApiUrl = process.env.NEXT_PUBLIC_SALEOR_API_URL;
-invariant(saleorApiUrl, "Missing NEXT_PUBLIC_SALEOR_API_URL env variable");
+import { getSaleorGraphQLUrlForBrowser } from "@/lib/saleor-api-url";
 
 /**
  * Server-side cookie storage for auth tokens.
@@ -49,8 +46,13 @@ const createServerCookieStorage = async () => {
 
 export const getServerAuthClient = async () => {
 	const serverCookieStorage = await createServerCookieStorage();
+	const raw = process.env.NEXT_PUBLIC_SALEOR_API_URL;
+	if (!raw) {
+		throw new Error("Missing NEXT_PUBLIC_SALEOR_API_URL");
+	}
 	return createSaleorAuthClient({
-		saleorApiUrl,
+		// Must match browser AuthProvider URL so cookie/storage keys align (JWT iss is usually localhost).
+		saleorApiUrl: getSaleorGraphQLUrlForBrowser(raw),
 		refreshTokenStorage: serverCookieStorage,
 		accessTokenStorage: serverCookieStorage,
 	});

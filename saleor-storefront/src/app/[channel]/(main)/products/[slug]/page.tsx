@@ -11,6 +11,7 @@ import { type SaleorLanguageCode, asGraphQLLanguageCode } from "@/lib/saleor-lan
 import { getSaleorLanguageCode } from "@/lib/saleor-language.server";
 import { buildPageMetadata, buildProductJsonLd } from "@/lib/seo";
 import { CACHE_PROFILES, applyCacheProfile } from "@/lib/cache-manifest";
+import { resolveSelectedVariantId, variantLooksPurchasable } from "@/lib/product-variant-stock";
 import { Breadcrumbs } from "@/ui/components/breadcrumbs";
 import {
 	ProductGallery,
@@ -164,7 +165,7 @@ async function ProductContent({
 	}
 
 	const variants = product.variants || [];
-	const selectedVariantId = searchParams.variant || (variants.length === 1 ? variants[0].id : undefined);
+	const selectedVariantId = resolveSelectedVariantId(searchParams.variant, variants);
 	const selectedVariant = variants.find((v) => v.id === selectedVariantId);
 
 	const descriptionHtml = parseDescription(product.description);
@@ -194,7 +195,7 @@ async function ProductContent({
 					currency: product.pricing.priceRange.start.gross.currency,
 				}
 			: null,
-		inStock: product.variants?.some((v) => v.quantityAvailable) ?? false,
+		inStock: product.variants?.some((v) => variantLooksPurchasable(v)) ?? false,
 		variantCount: product.variants?.length ?? 0,
 	});
 

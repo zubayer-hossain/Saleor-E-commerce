@@ -129,7 +129,7 @@ export function CartDrawer({ checkoutId, lines, totalPrice, channel }: CartDrawe
 	const handleUpdateQuantity = (lineId: string, newQuantity: number) => {
 		if (!checkoutId || newQuantity < 1) return;
 		startTransition(() => {
-			updateCartLineQuantity(checkoutId, lineId, newQuantity);
+			updateCartLineQuantity(checkoutId, lineId, newQuantity, channel);
 		});
 	};
 

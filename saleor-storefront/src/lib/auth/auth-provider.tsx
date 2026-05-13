@@ -13,10 +13,14 @@ import {
 	fetchExchange,
 } from "urql";
 import { withRetry } from "@/lib/fetch-retry";
+import { getSaleorGraphQLUrlForBrowser } from "@/lib/saleor-api-url";
 import { ACCESS_TOKEN_MAX_AGE, REFRESH_TOKEN_MAX_AGE, encodeCookieName } from "./constants";
 
-const saleorApiUrl = process.env.NEXT_PUBLIC_SALEOR_API_URL;
-invariant(saleorApiUrl, "Missing NEXT_PUBLIC_SALEOR_API_URL env variable");
+const saleorApiUrlRaw = process.env.NEXT_PUBLIC_SALEOR_API_URL;
+invariant(saleorApiUrlRaw, "Missing NEXT_PUBLIC_SALEOR_API_URL env variable");
+
+/** Browser-safe URL (never host.docker.internal). */
+const saleorApiUrl = getSaleorGraphQLUrlForBrowser(saleorApiUrlRaw);
 
 /**
  * Client-side cookie storage for auth tokens.
@@ -69,7 +73,9 @@ export const saleorAuthClient = createSaleorAuthClient({
 
 const makeUrqlClient = () => {
 	const authFetch = (input: RequestInfo | URL, init?: RequestInit) =>
-		saleorAuthClient.fetchWithAuth(input as NodeJS.fetch.RequestInfo, init);
+		saleorAuthClient.fetchWithAuth(input as NodeJS.fetch.RequestInfo, init, {
+			allowPassingTokenToThirdPartyDomains: true,
+		});
 
 	return createClient({
 		url: saleorApiUrl,
@@ -81,8 +87,6 @@ const makeUrqlClient = () => {
 };
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-	invariant(saleorApiUrl, "Missing NEXT_PUBLIC_SALEOR_API_URL env variable");
-
 	const [urqlClient, setUrqlClient] = useState<Client>(() => makeUrqlClient());
 	useAuthChange({
 		saleorApiUrl,

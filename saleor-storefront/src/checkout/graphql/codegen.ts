@@ -8,10 +8,22 @@ import type { CodegenConfig } from "@graphql-codegen/cli";
 
 loadEnvConfig(process.cwd());
 
-const schemaUrl = process.env.NEXT_PUBLIC_SALEOR_API_URL;
+function resolveCodegenSchemaUrl(): string {
+	const explicit = process.env.GRAPHQL_CODEGEN_SCHEMA_URL?.trim();
+	if (explicit) return explicit;
+	const server = process.env.SALEOR_API_SERVER_URL?.trim();
+	if (server) return server;
+	const publicUrl = process.env.NEXT_PUBLIC_SALEOR_API_URL?.trim();
+	if (publicUrl) return publicUrl;
+	return "";
+}
+
+const schemaUrl = resolveCodegenSchemaUrl();
 
 if (!schemaUrl) {
-	console.error("Missing NEXT_PUBLIC_SALEOR_API_URL environment variable");
+	console.error(
+		"Checkout GraphQL codegen: set NEXT_PUBLIC_SALEOR_API_URL or SALEOR_API_SERVER_URL / GRAPHQL_CODEGEN_SCHEMA_URL",
+	);
 	process.exit(1);
 }
 
