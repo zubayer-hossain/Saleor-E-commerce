@@ -115,7 +115,10 @@ services:
       # NEXT_PUBLIC_DEFAULT_CHANNEL comes from saleor-storefront/.env (do not hardcode here)
       # Reliable file watching when bind-mounting from Windows/macOS
       WATCHPACK_POLLING: "true"
-      CHOKIDAR_USEPOLLING: "true"
+      # Faster local Docker dev — default client enforces ~200ms between each GraphQL (feels stalled on /
+      # → /shop with many SSR queries). Omit in production-looking compose if you tune rate limits.
+      SALEOR_MIN_REQUEST_DELAY_MS: "0"
+      SALEOR_MAX_CONCURRENT_REQUESTS: "8"
     depends_on:
       - api
     # Use `next dev` directly so lifecycle `predev` does not re-run GraphQL codegen on every boot (slow on bind mounts).

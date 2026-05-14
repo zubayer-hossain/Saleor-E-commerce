@@ -16,6 +16,9 @@ importers:
 
   .:
     dependencies:
+      '@fontsource-variable/fredoka':
+        specifier: 5.2.6
+        version: 5.2.6
       '@graphql-typed-document-node/core':
         specifier: 3.2.0
         version: 3.2.0(graphql@16.8.1)
@@ -700,6 +703,9 @@ packages:
 
   '@floating-ui/utils@0.2.10':
     resolution: {integrity: sha512-aGTxbpbg8/b5JfU1HXSrbH3wXZuLPJcNEcZQFMxLs3oSzgtVu6nFPkbbGGUvBcUjKV2YyB9Wxxabo+HEH9tcRQ==}
+
+  '@fontsource-variable/fredoka@5.2.6':
+    resolution: {integrity: sha512-tPOsXUwvjHbdxjh6xpmUKQibpZhsprfAH0YTfCft6OdnPz4ry4puiRHk91ldgXINurhLtEiPTmky5ZF9eB3tKQ==}
 
   '@graphql-codegen/add@6.0.0':
     resolution: {integrity: sha512-biFdaURX0KTwEJPQ1wkT6BRgNasqgQ5KbCI1a3zwtLtO7XTo7/vKITPylmiU27K5DSOWYnY/1jfSqUAEBuhZrQ==}
@@ -5530,6 +5536,8 @@ snapshots:
       react-dom: 19.2.3(react@19.2.3)
 
   '@floating-ui/utils@0.2.10': {}
+
+  '@fontsource-variable/fredoka@5.2.6': {}
 
   '@graphql-codegen/add@6.0.0(graphql@16.8.1)':
     dependencies:
