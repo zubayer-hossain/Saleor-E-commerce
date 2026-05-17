@@ -202,6 +202,62 @@ async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: numbe
 	}
 }
 
+/**
+ * Race any promise against a hard timeout. Used for the auth-SDK path because
+ * `fetchWithAuth` does not forward our AbortSignal into its internal calls.
+ */
+async function raceWithTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+	let timeoutId: ReturnType<typeof setTimeout> | undefined;
+	const timeoutPromise = new Promise<T>((_, reject) => {
+		timeoutId = setTimeout(() => {
+			const err = new Error("AuthFetch timeout");
+			err.name = "AbortError";
+			reject(err);
+		}, timeoutMs);
+	});
+
+	try {
+		return await Promise.race([promise, timeoutPromise]);
+	} finally {
+		if (timeoutId) clearTimeout(timeoutId);
+	}
+}
+
+/**
+ * Last-ditch fallback: call Saleor directly using the cookie-stored access
+ * token (no refresh). Returns null when there is no usable cookie so the
+ * caller can decide to propagate the original auth-SDK error.
+ *
+ * This deliberately bypasses the SDK so that a transient refresh outage does
+ * not look like a logout — the user keeps browsing if their access token is
+ * still server-side valid.
+ */
+async function tryDirectWithAccessCookie(
+	url: string,
+	init: RequestInit,
+	timeoutMs: number,
+): Promise<Response | null> {
+	try {
+		const { cookies } = await import("next/headers");
+		const { encodeCookieName } = await import("@/lib/auth/constants");
+		const { getSaleorGraphQLUrlForBrowser } = await import("@/lib/saleor-api-url");
+		const cookieStore = await cookies();
+		// SDK stores access token under "<browser-api-url>+saleor_auth_access_token"
+		// (encoded). Must match how `getServerAuthClient` constructs the SDK key.
+		const raw = process.env.NEXT_PUBLIC_SALEOR_API_URL ?? "";
+		const apiUrl = getSaleorGraphQLUrlForBrowser(raw);
+		const accessKey = encodeCookieName(`${apiUrl}+saleor_auth_access_token`);
+		const token = cookieStore.get(accessKey)?.value ?? null;
+		if (!token) return null;
+
+		const headers = new Headers(init.headers);
+		headers.set("Authorization", `Bearer ${token}`);
+		return await fetchWithTimeout(url, { ...init, headers }, timeoutMs);
+	} catch {
+		return null;
+	}
+}
+
 // ============================================================================
 // Core Fetch with Retry
 // ============================================================================
@@ -228,11 +284,17 @@ async function fetchWithRetry(
 			let response: Response;
 
 			if (withAuth) {
+				// Race the auth-SDK call against a hard timeout. The SDK's internal
+				// refresh + actual fetch share Node's `fetch`, which has NO default
+				// timeout. Without this race, a stalled Saleor pod hangs the whole
+				// request until the upstream socket dies (often >60s) — which the
+				// user sees as a forced "Unable to reach your account" logout.
 				try {
 					const { getServerAuthClient } = await import("@/lib/auth/server");
-					response = await (await getServerAuthClient()).fetchWithAuth(url, input, {
+					const authedFetchPromise = (await getServerAuthClient()).fetchWithAuth(url, input, {
 						allowPassingTokenToThirdPartyDomains: true,
 					});
+					response = await raceWithTimeout(authedFetchPromise, timeoutMs);
 				} catch (authError) {
 					const isDynamicServerError =
 						authError instanceof Error &&
@@ -242,7 +304,16 @@ async function fetchWithRetry(
 					if (isDynamicServerError) {
 						response = await fetchWithTimeout(url, input, timeoutMs);
 					} else {
-						throw authError;
+						// Fallback: if the SDK errored during refresh but the access
+						// cookie is still set, try a direct call with that token. This
+						// lets stale-but-still-valid tokens succeed during refresh
+						// outages and only "really logs out" on a genuine 401.
+						const direct = await tryDirectWithAccessCookie(url, input, timeoutMs);
+						if (direct) {
+							response = direct;
+						} else {
+							throw authError;
+						}
 					}
 				}
 			} else {

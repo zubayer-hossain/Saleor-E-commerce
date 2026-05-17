@@ -1,79 +1,71 @@
 "use client";
 
-import { useState, useEffect, useCallback, type FC } from "react";
+import { useCallback, useEffect, useState, type FC } from "react";
 import { ChevronLeft, AlertCircle } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Button } from "@/ui/components/ui/button";
-import { CheckoutSummaryContext, buildPaymentSummaryRows } from "./checkout-summary-context";
+
 import {
 	type CheckoutFragment,
 	type CountryCode,
 	type AddressFragment,
 	useCheckoutBillingAddressUpdateMutation,
-	useTransactionInitializeMutation,
-	useCheckoutCompleteMutation,
 } from "@/checkout/graphql";
 import { useCheckout } from "@/checkout/hooks/use-checkout";
 import { useUser } from "@/checkout/hooks/use-user";
 import { getAddressInputData } from "@/checkout/components/address-form/utils";
-// Dummy payment gateway ID (from Saleor Dummy Payment app)
-const dummyGatewayId = "mirumee.payments.dummy";
 import { createQueryString } from "@/checkout/lib/utils/url";
 import { readSaleorLanguageCodeFromDocumentCookie } from "@/lib/saleor-language-cookie";
+
+import { CheckoutSummaryContext, buildPaymentSummaryRows } from "./checkout-summary-context";
 import { MobileStickyAction } from "./mobile-sticky-action";
 import { getStepNumber } from "./flow";
 
-// Extracted reusable components
 import {
-	PaymentMethodSelector,
 	BillingAddressSection,
-	type PaymentMethodType,
-	type CardData,
+	StripePaymentForm,
 	type BillingAddressData,
-	isCardDataValid,
 } from "@/checkout/components/payment";
-import { LoadingSpinner } from "@/checkout/ui-kit/loading-spinner";
-import { formatMoneyWithFallback } from "@/checkout/lib/utils/money";
 
 interface PaymentStepProps {
 	checkout: CheckoutFragment;
 	onBack: () => void;
-	onComplete: () => void;
 	onGoToInformation?: () => void;
 }
 
+/**
+ * Stripe-only payment step.
+ *
+ * Why Stripe only:
+ * - Per requirements we accept Stripe Card / Wallets exclusively.
+ * - The Stripe Payment Element handles dynamic methods (Card, Apple/Google Pay,
+ *   Link, etc.) configured in the Stripe Dashboard — restrict to "card" there
+ *   if you want literal card-only.
+ *
+ * Flow:
+ * 1. User edits billing address (or "same as shipping" copies the shipping address).
+ * 2. We push the billing address to Saleor via `checkoutBillingAddressUpdate`.
+ * 3. `<StripePaymentForm>` does Payment Element + `/api/stripe/create-intent`
+ *    + `stripe.confirmPayment` + `/api/stripe/finalize` → returns an `orderId`.
+ * 4. We push `?orderId=…` into the URL — `root-views.tsx` swaps to the
+ *    `OrderConfirmation` view based on that param.
+ */
 export const PaymentStep: FC<PaymentStepProps> = ({
 	checkout: initialCheckout,
 	onBack,
-	onComplete,
 	onGoToInformation,
 }) => {
 	const router = useRouter();
 	const searchParams = useSearchParams();
-	// Use live checkout data to ensure we have the latest total (including shipping)
 	const { checkout: liveCheckout } = useCheckout();
 	const checkout = liveCheckout || initialCheckout;
 
-	// Get user data for saved addresses
 	const { user, authenticated } = useUser();
 
-	// For digital products, there's no shipping address, so can't use "same as billing"
 	const isShippingRequired = checkout.isShippingRequired;
 	const hasShippingAddress = !!checkout.shippingAddress;
+	const shippingAddress = checkout.shippingAddress;
 
-	// Payment method state
-	const [paymentMethod, setPaymentMethod] = useState<PaymentMethodType>("card");
-	// Lazy initialization - object only created once on mount
-	const [cardData, setCardData] = useState<CardData>(() => ({
-		cardNumber: "",
-		expiry: "",
-		cvc: "",
-		nameOnCard: "",
-	}));
-
-	// Billing address state
 	const [sameAsBilling, setSameAsBilling] = useState(isShippingRequired && hasShippingAddress);
-	// Lazy initialization - complex object only created once on mount
 	const [billingData, setBillingData] = useState<BillingAddressData>(() => ({
 		countryCode: (checkout.billingAddress?.country?.code as CountryCode) || "US",
 		formData: {
@@ -89,53 +81,35 @@ export const PaymentStep: FC<PaymentStepProps> = ({
 		},
 	}));
 
-	// Sync billing address from server state
 	useEffect(() => {
 		const billing = checkout.billingAddress;
-		if (billing) {
-			setBillingData((prev) => ({
-				...prev,
-				countryCode: (billing.country?.code as CountryCode) || "US",
-				formData: {
-					firstName: billing.firstName || "",
-					lastName: billing.lastName || "",
-					streetAddress1: billing.streetAddress1 || "",
-					streetAddress2: billing.streetAddress2 || "",
-					companyName: billing.companyName || "",
-					city: billing.city || "",
-					postalCode: billing.postalCode || "",
-					countryArea: billing.countryArea || "",
-					cityArea: billing.cityArea || "",
-					phone: billing.phone || "",
-				},
-			}));
-		}
+		if (!billing) return;
+		setBillingData((prev) => ({
+			...prev,
+			countryCode: (billing.country?.code as CountryCode) || "US",
+			formData: {
+				firstName: billing.firstName || "",
+				lastName: billing.lastName || "",
+				streetAddress1: billing.streetAddress1 || "",
+				streetAddress2: billing.streetAddress2 || "",
+				companyName: billing.companyName || "",
+				city: billing.city || "",
+				postalCode: billing.postalCode || "",
+				countryArea: billing.countryArea || "",
+				cityArea: billing.cityArea || "",
+				phone: billing.phone || "",
+			},
+		}));
 	}, [checkout.billingAddress]);
 
-	const [isProcessing, setIsProcessing] = useState(false);
 	const [errors, setErrors] = useState<Record<string, string>>({});
+	const [isSavingAddress, setIsSavingAddress] = useState(false);
+	const [billingSaved, setBillingSaved] = useState(false);
 
-	// Mutations
 	const [, updateBillingAddress] = useCheckoutBillingAddressUpdateMutation();
-	const [transactionState, transactionInitialize] = useTransactionInitializeMutation();
-	const [completeState, checkoutComplete] = useCheckoutCompleteMutation();
 
-	// Check for available payment gateways
-	const availableGateways = checkout.availablePaymentGateways || [];
-	const hasDummyGateway = availableGateways.some((g) => g.id === dummyGatewayId);
-	const hasRealGateway = availableGateways.some((g) => g.id !== dummyGatewayId);
-
-	const shippingAddress = checkout.shippingAddress;
-
-	// Memoize billing data handler to avoid infinite loops
-	const handleBillingDataChange = useCallback((data: BillingAddressData) => {
-		setBillingData(data);
-	}, []);
-
-	// Summary rows for context display
 	const summaryRows = buildPaymentSummaryRows(checkout);
 
-	// Handle step navigation from summary
 	const handleGoToStep = (step: number) => {
 		if (step === 1 && onGoToInformation) {
 			onGoToInformation();
@@ -144,253 +118,174 @@ export const PaymentStep: FC<PaymentStepProps> = ({
 		}
 	};
 
-	const total = checkout.totalPrice?.gross;
-	const totalStr = formatMoneyWithFallback(total);
+	const handleBillingDataChange = useCallback((data: BillingAddressData) => {
+		setBillingData(data);
+		setBillingSaved(false);
+	}, []);
 
-	const handleSubmit = useCallback(
-		async (event?: React.FormEvent) => {
-			if (event) {
-				event.preventDefault();
-			}
+	const handleSameAsBillingChange = useCallback((value: boolean) => {
+		setSameAsBilling(value);
+		setBillingSaved(false);
+	}, []);
 
-			setErrors({});
+	/**
+	 * Push the latest billing address to Saleor. We do this BEFORE Stripe confirms
+	 * the payment so the invoice/receipt fields are correct, and so that
+	 * `checkoutComplete` doesn't 4xx with "billing address required".
+	 *
+	 * Returns true if the address is persisted (or already up-to-date).
+	 */
+	const persistBillingAddress = useCallback(async (): Promise<boolean> => {
+		const needsBillingForm = !sameAsBilling || !hasShippingAddress;
+		const languageCode = readSaleorLanguageCodeFromDocumentCookie();
 
-			// Validate billing address if different from shipping (or for digital products)
-			const needsBillingForm = !sameAsBilling || !hasShippingAddress;
+		setErrors({});
+		setIsSavingAddress(true);
+		try {
+			let addressInput;
 
-			setIsProcessing(true);
-			try {
-				const languageCode = readSaleorLanguageCodeFromDocumentCookie();
-				// Update billing address
-				if (needsBillingForm) {
-					let addressInput;
-
-					// Check if user selected a saved address
-					if (billingData.selectedAddressId && user?.addresses) {
-						const selectedAddress = user.addresses.find((addr) => addr.id === billingData.selectedAddressId);
-						if (selectedAddress) {
-							addressInput = getAddressInputData({
-								firstName: selectedAddress.firstName || "",
-								lastName: selectedAddress.lastName || "",
-								streetAddress1: selectedAddress.streetAddress1 || "",
-								streetAddress2: selectedAddress.streetAddress2 || "",
-								companyName: selectedAddress.companyName || "",
-								city: selectedAddress.city || "",
-								postalCode: selectedAddress.postalCode || "",
-								countryArea: selectedAddress.countryArea || "",
-								phone: selectedAddress.phone || "",
-								countryCode: selectedAddress.country?.code as CountryCode,
-							});
-						}
-					}
-
-					// If no saved address selected, use form data
-					if (!addressInput) {
+			if (needsBillingForm) {
+				if (billingData.selectedAddressId && user?.addresses) {
+					const selected = user.addresses.find((a) => a.id === billingData.selectedAddressId);
+					if (selected) {
 						addressInput = getAddressInputData({
-							...billingData.formData,
-							countryCode: billingData.countryCode,
+							firstName: selected.firstName || "",
+							lastName: selected.lastName || "",
+							streetAddress1: selected.streetAddress1 || "",
+							streetAddress2: selected.streetAddress2 || "",
+							companyName: selected.companyName || "",
+							city: selected.city || "",
+							postalCode: selected.postalCode || "",
+							countryArea: selected.countryArea || "",
+							phone: selected.phone || "",
+							countryCode: selected.country?.code as CountryCode,
 						});
 					}
-
-					const result = await updateBillingAddress({
-						checkoutId: checkout.id,
-						billingAddress: addressInput,
-						languageCode,
-					});
-					if (result.error) {
-						setErrors({ streetAddress1: "Failed to update billing address" });
-						return;
-					}
-					const billingErrors = result.data?.checkoutBillingAddressUpdate?.errors;
-					if (billingErrors?.length) {
-						const errorMap: Record<string, string> = {};
-						billingErrors.forEach((err) => {
-							const field = err.field || "streetAddress1";
-							errorMap[field] = err.message || "Invalid value";
-						});
-						setErrors(errorMap);
-						const firstField = Object.keys(errorMap)[0];
-						const element = document.querySelector(`[name="${firstField}"]`) as HTMLElement;
-						element?.focus();
-						return;
-					}
-				} else if (shippingAddress) {
-					// Copy shipping address to billing
-					const addressInput = getAddressInputData({
-						firstName: shippingAddress.firstName || "",
-						lastName: shippingAddress.lastName || "",
-						streetAddress1: shippingAddress.streetAddress1 || "",
-						streetAddress2: shippingAddress.streetAddress2 || "",
-						companyName: shippingAddress.companyName || "",
-						city: shippingAddress.city || "",
-						postalCode: shippingAddress.postalCode || "",
-						countryArea: shippingAddress.countryArea || "",
-						phone: shippingAddress.phone || "",
-						countryCode: shippingAddress.country?.code as CountryCode,
-					});
-					await updateBillingAddress({
-						checkoutId: checkout.id,
-						billingAddress: addressInput,
-						languageCode,
+				}
+				if (!addressInput) {
+					addressInput = getAddressInputData({
+						...billingData.formData,
+						countryCode: billingData.countryCode,
 					});
 				}
-
-				// Process payment using available gateway
-				if (hasDummyGateway) {
-					const checkoutId = checkout.id;
-
-					const initResult = await transactionInitialize({
-						checkoutId,
-						paymentGateway: {
-							id: dummyGatewayId,
-							data: {
-								event: {
-									includePspReference: true,
-									type: "CHARGE_SUCCESS",
-								},
-							},
-						},
-					});
-
-					if (initResult.error) {
-						console.error("Payment initialization error:", initResult.error);
-						setErrors({ streetAddress1: "Payment failed. Please try again." });
-						return;
-					}
-
-					const transactionErrors = initResult.data?.transactionInitialize?.errors;
-					if (transactionErrors?.length) {
-						console.error("Transaction errors:", transactionErrors);
-						setErrors({ streetAddress1: transactionErrors[0].message || "Payment failed" });
-						return;
-					}
-
-					// Complete the checkout and create the order
-					const completeResult = await checkoutComplete({
-						checkoutId,
-					});
-
-					if (completeResult.error) {
-						console.error("Checkout complete error:", completeResult.error);
-						setErrors({ streetAddress1: "Failed to complete order. Please try again." });
-						return;
-					}
-
-					const completeErrors = completeResult.data?.checkoutComplete?.errors;
-					if (completeErrors?.length) {
-						const errorDetails = completeErrors.map((e) => `${e.field}: ${e.message} (${e.code})`).join(", ");
-						console.error("Checkout complete errors:", errorDetails, completeErrors);
-						// Show a more descriptive error
-						const firstError = completeErrors[0];
-						const errorMessage = firstError.message || firstError.code || "Failed to complete order";
-						setErrors({ payment: errorMessage });
-						return;
-					}
-
-					// Redirect to order confirmation
-					const order = completeResult.data?.checkoutComplete?.order;
-					if (order) {
-						const newQuery = createQueryString(searchParams, { orderId: order.id });
-						router.replace(`?${newQuery}`, { scroll: false });
-						return;
-					}
-				} else if (!hasRealGateway) {
-					// No payment gateway configured
-					setErrors({
-						streetAddress1:
-							"No payment gateway configured. Please contact support or configure a payment app in Saleor.",
-					});
-					return;
-				} else {
-					// Real payment gateway - this UI doesn't support it yet
-					// For now, show an error
-					setErrors({
-						streetAddress1:
-							"This checkout UI currently only supports test payments. Please use the standard checkout for real payments.",
-					});
-					return;
-				}
-
-				onComplete();
-			} finally {
-				setIsProcessing(false);
+			} else if (shippingAddress) {
+				addressInput = getAddressInputData({
+					firstName: shippingAddress.firstName || "",
+					lastName: shippingAddress.lastName || "",
+					streetAddress1: shippingAddress.streetAddress1 || "",
+					streetAddress2: shippingAddress.streetAddress2 || "",
+					companyName: shippingAddress.companyName || "",
+					city: shippingAddress.city || "",
+					postalCode: shippingAddress.postalCode || "",
+					countryArea: shippingAddress.countryArea || "",
+					phone: shippingAddress.phone || "",
+					countryCode: shippingAddress.country?.code as CountryCode,
+				});
 			}
+
+			if (!addressInput) {
+				setErrors({ streetAddress1: "Missing billing address details." });
+				return false;
+			}
+
+			const result = await updateBillingAddress({
+				checkoutId: checkout.id,
+				billingAddress: addressInput,
+				languageCode,
+			});
+
+			if (result.error) {
+				setErrors({ streetAddress1: "Failed to update billing address." });
+				return false;
+			}
+			const billingErrors = result.data?.checkoutBillingAddressUpdate?.errors ?? [];
+			if (billingErrors.length) {
+				const errorMap: Record<string, string> = {};
+				billingErrors.forEach((e) => {
+					const field = e.field || "streetAddress1";
+					errorMap[field] = e.message || "Invalid value";
+				});
+				setErrors(errorMap);
+				const firstField = Object.keys(errorMap)[0];
+				if (firstField) {
+					const el = document.querySelector(`[name="${firstField}"]`) as HTMLElement | null;
+					el?.focus();
+				}
+				return false;
+			}
+
+			setBillingSaved(true);
+			return true;
+		} finally {
+			setIsSavingAddress(false);
+		}
+	}, [
+		sameAsBilling,
+		hasShippingAddress,
+		billingData,
+		user?.addresses,
+		shippingAddress,
+		checkout.id,
+		updateBillingAddress,
+	]);
+
+	// Eagerly persist "same as shipping" — most users never edit that path,
+	// so the Stripe button isn't blocked behind a hidden form save.
+	useEffect(() => {
+		if (sameAsBilling && hasShippingAddress && !billingSaved && !isSavingAddress) {
+			void persistBillingAddress();
+		}
+		// We deliberately depend only on the toggle; persistBillingAddress changes on every render
+		// because of `billingData`, which would trigger an infinite loop here.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [sameAsBilling, hasShippingAddress]);
+
+	const handleStripeOrderCreated = useCallback(
+		(orderId: string) => {
+			// Setting `orderId` in the URL is enough — RootViews swaps to <OrderConfirmation/>
+			// the moment that query param is present. DO NOT also call onComplete(): that
+			// would call goToStep("CONFIRMATION") with a STALE searchParams snapshot and
+			// strip `orderId` back off the URL, dropping us into the legacy "Demo Mode"
+			// ConfirmationStep view with a fake DEMO-… order number.
+			const newQuery = createQueryString(searchParams, { orderId });
+			router.replace(`?${newQuery}`, { scroll: false });
 		},
-		[
-			sameAsBilling,
-			hasShippingAddress,
-			billingData,
-			user?.addresses,
-			shippingAddress,
-			checkout.id,
-			hasDummyGateway,
-			hasRealGateway,
-			updateBillingAddress,
-			transactionInitialize,
-			checkoutComplete,
-			onComplete,
-			searchParams,
-			router,
-		],
+		[router, searchParams],
 	);
 
-	const isCardValid = isCardDataValid(cardData);
+	const handleStripeError = useCallback((message: string) => {
+		setErrors((prev) => ({ ...prev, payment: message }));
+	}, []);
 
-	const isPaymentProcessing = transactionState.fetching || completeState.fetching;
+	const total = checkout.totalPrice?.gross;
+	const totalAmount = total?.amount ?? 0;
+	const totalCurrency = total?.currency ?? "USD";
 
-	const isLoading = isProcessing || isPaymentProcessing;
-	const buttonText = isLoading
-		? completeState.fetching
-			? "Creating order..."
-			: "Processing payment..."
-		: `Pay ${totalStr}`;
+	const billingFullName =
+		[billingData.formData.firstName, billingData.formData.lastName].filter(Boolean).join(" ") ||
+		[shippingAddress?.firstName, shippingAddress?.lastName].filter(Boolean).join(" ");
 
-	const isDisabled =
-		isLoading ||
-		(!hasDummyGateway && !hasRealGateway) ||
-		(paymentMethod === "card" && !hasDummyGateway && !isCardValid);
+	// The Stripe button is gated by a fresh billing-address save unless we're
+	// reusing the shipping address. This is what we tell the form to disable on.
+	const billingReady = sameAsBilling && hasShippingAddress ? billingSaved || !isSavingAddress : billingSaved;
 
 	return (
-		<form className="space-y-8" onSubmit={handleSubmit}>
-			{/* Summary Context */}
+		<div className="space-y-8">
 			<CheckoutSummaryContext checkout={checkout} rows={summaryRows} onGoToStep={handleGoToStep} />
 
-			{/* No Payment Gateway Warning */}
-			{!hasDummyGateway && !hasRealGateway && (
-				<div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4">
-					<AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
-					<div>
-						<p className="font-medium text-amber-800">No payment gateway configured</p>
-						<p className="mt-1 text-sm text-amber-700">
-							To accept payments, install a payment app (like Saleor Dummy Payment for testing, or
-							Stripe/Adyen for production) from the Saleor Dashboard.
-						</p>
-					</div>
-				</div>
-			)}
-
-			{/* Test Mode Indicator */}
-			{hasDummyGateway && !hasRealGateway && (
+			{/* Stripe Test Mode hint (only shown when key is pk_test_…) */}
+			{process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY?.startsWith("pk_test_") && (
 				<div className="flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 p-4">
 					<AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-blue-600" />
 					<div>
-						<p className="font-medium text-blue-800">Test Mode</p>
+						<p className="font-medium text-blue-800">Stripe Test Mode</p>
 						<p className="mt-1 text-sm text-blue-700">
-							Using test payment gateway. No real charges will be made.
+							Use card <code>4242 4242 4242 4242</code>, any future date, any CVC. No real charge.
 						</p>
 					</div>
 				</div>
 			)}
 
-			{/* Payment Method */}
-			<PaymentMethodSelector
-				value={paymentMethod}
-				onChange={setPaymentMethod}
-				cardData={cardData}
-				onCardDataChange={setCardData}
-			/>
-
-			{/* Billing Address */}
 			<BillingAddressSection
 				billingAddress={checkout.billingAddress}
 				shippingAddress={shippingAddress}
@@ -399,11 +294,55 @@ export const PaymentStep: FC<PaymentStepProps> = ({
 				isShippingRequired={isShippingRequired}
 				errors={errors}
 				onChange={handleBillingDataChange}
-				onSameAsShippingChange={setSameAsBilling}
+				onSameAsShippingChange={handleSameAsBillingChange}
 				initialSameAsShipping={sameAsBilling}
 			/>
 
-			{/* Payment/Checkout Error Display */}
+			{/* Save billing button — only needed when the user typed a fresh address. */}
+			{!billingSaved && (!sameAsBilling || !hasShippingAddress) && (
+				<div className="flex justify-end">
+					<button
+						type="button"
+						onClick={() => {
+							void persistBillingAddress();
+						}}
+						className="text-sm font-medium text-foreground underline hover:no-underline disabled:opacity-50"
+						disabled={isSavingAddress}
+					>
+						{isSavingAddress ? "Saving billing address…" : "Use this billing address"}
+					</button>
+				</div>
+			)}
+
+			<section className="space-y-4">
+				<h2 className="text-lg font-semibold">Payment</h2>
+				<p className="text-sm text-muted-foreground">
+					Payments are processed securely by Stripe. Card details never touch our servers.
+				</p>
+
+				<StripePaymentForm
+					checkoutId={checkout.id}
+					amount={totalAmount}
+					currency={totalCurrency}
+					billingName={billingFullName}
+					billingEmail={checkout.email ?? undefined}
+					disabled={!billingReady}
+					onOrderCreated={handleStripeOrderCreated}
+					onError={handleStripeError}
+					renderActions={({ isProcessing }) => (
+						<button
+							type="button"
+							onClick={onBack}
+							disabled={isProcessing}
+							className="flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+						>
+							<ChevronLeft className="h-4 w-4" />
+							{isShippingRequired ? "Return to shipping" : "Return to information"}
+						</button>
+					)}
+				/>
+			</section>
+
 			{errors.payment && (
 				<div className="border-destructive/50 bg-destructive/10 flex items-start gap-3 rounded-lg border p-4">
 					<AlertCircle className="h-5 w-5 flex-shrink-0 text-destructive" />
@@ -414,38 +353,20 @@ export const PaymentStep: FC<PaymentStepProps> = ({
 				</div>
 			)}
 
-			{/* Navigation */}
-			<div className="flex items-center justify-between">
-				<button
-					type="button"
-					onClick={onBack}
-					className="flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
-				>
-					<ChevronLeft className="h-4 w-4" />
-					{isShippingRequired ? "Return to shipping" : "Return to information"}
-				</button>
-				<Button type="submit" disabled={isDisabled} className="hidden h-12 min-w-[200px] px-8 md:flex">
-					{isLoading ? (
-						<span className="flex items-center gap-2">
-							<LoadingSpinner />
-							{buttonText}
-						</span>
-					) : (
-						buttonText
-					)}
-				</Button>
-			</div>
-
+			{/* Mobile sticky action is intentionally inert on this step — Stripe Payment
+			    Element + its built-in 3DS handling owns the submit on small screens too. */}
 			<MobileStickyAction
 				step={getStepNumber("PAYMENT", isShippingRequired)}
 				isShippingRequired={isShippingRequired}
-				type="submit"
-				onAction={handleSubmit}
-				isLoading={isLoading}
-				disabled={isDisabled}
-				total={totalStr}
-				loadingText={completeState.fetching ? "Creating order..." : "Processing payment..."}
+				type="button"
+				onAction={() => {
+					/* Stripe form owns the submit button; mobile shows its own. */
+				}}
+				isLoading={false}
+				disabled={true}
+				total={`${totalCurrency.toUpperCase()} ${totalAmount.toFixed(2)}`}
+				loadingText=""
 			/>
-		</form>
+		</div>
 	);
 };

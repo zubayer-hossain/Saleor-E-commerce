@@ -13,11 +13,8 @@ export interface SignedInUserProps {
 /**
  * Displays signed-in user info with sign-out option.
  *
- * Shows:
- * - User avatar (first letter of email)
- * - Email address
- * - "Signed in" status
- * - Sign out button
+ * Saleor stays logged in via cookies until refresh expires or the user signs out.
+ * Checkout must not imply they just authenticated today — copy explains “saved session”.
  */
 export const SignedInUser: FC<SignedInUserProps> = ({ user, onSignOut }) => {
 	const { signOut } = useSaleorAuthContext();
@@ -35,13 +32,16 @@ export const SignedInUser: FC<SignedInUserProps> = ({ user, onSignOut }) => {
 				</div>
 				<div className="min-w-0 flex-1">
 					<p className="break-words font-medium">{user.email}</p>
-					<p className="text-sm text-muted-foreground">Signed in</p>
+					<p className="text-sm leading-snug text-muted-foreground">
+						Saved sign-in on this browser — we will use your account for this order. Sign out below to shop as a guest
+						with another email.
+					</p>
 				</div>
 			</div>
 			<button
 				type="button"
 				onClick={handleSignOut}
-				className="shrink-0 text-sm text-muted-foreground underline underline-offset-2 hover:text-foreground hover:no-underline"
+				className="shrink-0 self-start text-sm text-muted-foreground underline underline-offset-2 hover:text-foreground hover:no-underline"
 			>
 				Sign out
 			</button>

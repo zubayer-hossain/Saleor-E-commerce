@@ -5,6 +5,13 @@ const config = {
 	// See: https://nextjs.org/docs/app/getting-started/cache-components
 	cacheComponents: true,
 
+	// Keep Node-native server SDKs out of the webpack bundle. Stripe ships its own
+	// HTTPS agent on top of `node:https`; when webpack inlines it, the agent's
+	// `keepAlive` socket pool ends up sharing state across requests and throws
+	// `StripeConnectionError: Request was retried 2 times` from inside a route
+	// handler — even though raw `fetch()` to api.stripe.com works fine.
+	serverExternalPackages: ["stripe"],
+
 	// Optimize barrel file imports for better bundle size and cold start performance
 	// See: https://vercel.com/blog/how-we-optimized-package-imports-in-next-js
 	experimental: {

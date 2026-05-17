@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Mail, Lock, Eye, EyeOff } from "lucide-react";
 import { useSaleorAuthContext } from "@saleor/auth-sdk/react";
 import { Button } from "@/ui/components/ui/button";
@@ -11,9 +11,22 @@ import { Label } from "@/ui/components/ui/label";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+function safePostLoginPath(nextRaw: string | null, channel: string): string {
+	const fallback = `/${channel}`;
+	if (!nextRaw || !nextRaw.startsWith("/") || nextRaw.startsWith("//")) {
+		return fallback;
+	}
+	// Limit open redirects to this storefront channel
+	if (nextRaw === `/${channel}` || nextRaw.startsWith(`/${channel}/`)) {
+		return nextRaw;
+	}
+	return fallback;
+}
+
 export function LoginMode() {
 	const router = useRouter();
 	const params = useParams<{ channel: string }>();
+	const searchParams = useSearchParams();
 	const { signIn } = useSaleorAuthContext();
 
 	const [email, setEmail] = useState("");
@@ -57,7 +70,8 @@ export function LoginMode() {
 			}
 
 			if (result.data?.tokenCreate?.token) {
-				router.push(`/${params.channel}`);
+				const destination = safePostLoginPath(searchParams.get("next"), params.channel);
+				router.push(destination);
 				router.refresh();
 			}
 		} catch (cause) {

@@ -7,7 +7,6 @@ import { OrderSummary } from "./order-summary";
 import { InformationStep } from "./information-step";
 import { ShippingStep } from "./shipping-step";
 import { PaymentStep } from "./payment-step";
-import { ConfirmationStep } from "./confirmation-step";
 import { useCheckout } from "@/checkout/hooks/use-checkout";
 import { useUser } from "@/checkout/hooks/use-user";
 import { useCustomerAttach } from "@/checkout/hooks/use-customer-attach";
@@ -128,11 +127,12 @@ export const SaleorCheckout: FC = () => {
 									<PaymentStep
 										checkout={checkout}
 										onBack={() => goToStep(isShippingRequired ? "SHIPPING" : "INFO")}
-										onComplete={() => goToStep("CONFIRMATION")}
 										onGoToInformation={() => goToStep("INFO")}
 									/>
 								)}
-								{currentStep.id === "CONFIRMATION" && <ConfirmationStep checkout={checkout} />}
+								{/* No CONFIRMATION step rendered here: once Stripe + checkoutComplete
+								    returns an orderId, `root-views.tsx` swaps the whole view to
+								    `<OrderConfirmation/>`, which has its own order-backed right rail. */}
 							</div>
 						</div>
 					</div>

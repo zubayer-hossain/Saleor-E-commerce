@@ -104,7 +104,10 @@ async function CartContent({ params: paramsPromise }: { params: Promise<{ channe
 							<p className="mt-1 text-sm text-neutral-500">Shipping will be calculated in the next step</p>
 						</div>
 						<div className="font-medium text-neutral-900">
-							{formatMoney(checkout.totalPrice.gross.amount, checkout.totalPrice.gross.currency)}
+							{formatMoney(
+								(checkout.subtotalPrice ?? checkout.totalPrice).gross.amount,
+								(checkout.subtotalPrice ?? checkout.totalPrice).gross.currency,
+							)}
 						</div>
 					</div>
 				</div>

@@ -4,12 +4,18 @@ ToyVerse demo catalog — seeds categories, 40 toy products, collections, menus,
 
 Requires:
   - Python 3.10+
-  - Saleor App token with MANAGE_PRODUCTS, MANAGE_TRANSLATIONS, and MANAGE_MENUS (menus)
+  - Saleor App token with MANAGE_PRODUCTS, MANAGE_TRANSLATIONS, and MANAGE_MENUS (menus).
+    Optional: MANAGE_PRODUCT_TYPES_AND_ATTRIBUTES lets the seed auto-create a shippable product type
+    (``toyverse-physical``). Otherwise Dashboard must expose at least one **variant-capable** product type
+    with **Shipping required** enabled (checkout skips shipping when all lines use ``isShippingRequired=false``,
+    e.g. Audiobook).
+    Optional: **MANAGE_CHANNELS** attaches the seeded warehouse to the channel when missing; otherwise do that in
+    Dashboard (Channel → Warehouses) or storefront ``quantityAvailable`` can stay zero despite stock rows.
 
 Environment:
   SALEOR_API_URL            GraphQL endpoint (default: http://localhost:8000/graphql/)
   SALEOR_APP_TOKEN          Bearer token from Dashboard → Apps / extension
-  TOYVERSE_CHANNEL_SLUG     Channel slug (default: default-channel)
+  TOYVERSE_CHANNEL_SLUG     Channel slug (default: shop — matches this repo's Saleor compose / storefront `.env`; override when your channel differs)
   TOYVERSE_WAREHOUSE_SLUG   Optional exact warehouse slug to receive variant stock (e.g. default-warehouse)
   TOYVERSE_WAREHOUSE_SLUGS  Optional comma-separated list; first existing slug wins (after TOYVERSE_WAREHOUSE_SLUG if set)
   TOYVERSE_PRODUCT_TYPE_SLUG Optional. If set, every seeded product uses this Saleor product type slug (overrides per-category map).
@@ -23,10 +29,14 @@ Environment:
   TOYVERSE_MENU_LINK_ORIGIN Optional absolute storefront origin for footer Help links (default http://127.0.0.1:3000).
                                Saleor requires valid http(s) URLs; paths become {origin}/{channel}/...
   TOYVERSE_ATTACH_MEDIA_ON_REUSE Optional. Default on: when a product slug already exists, attach demo image if the product has no media (reuse skips full create flow otherwise).
-                               On reuse, ToyVerse also sets stock on the resolved primary warehouse (parity with fresh productVariantCreate) unless TOYVERSE_SKIP_STOCK_SYNC_ON_REUSE=1.
+                               On reuse, ToyVerse also syncs variant stock unless TOYVERSE_SKIP_STOCK_SYNC_ON_REUSE=1.
   TOYVERSE_SKIP_STOCK_SYNC_ON_REUSE Optional. If "1", skip productVariantStocksUpdate when reusing an existing product slug (old behavior — warehouse env had no effect on re-runs).
   TOYVERSE_VARIANT_STOCK_QUANTITY Demo quantity passed to variant stock APIs (default 120).
-  TOYVERSE_REPAIR_PRODUCT_TYPES Optional. If "1", when slug reuse finds wrong Saleor product type vs seed map, delete that product and recreate (fixes older runs stuck on Audiobook).
+  TOYVERSE_SYNC_STOCK_TO_ALL_CHANNEL_WAREHOUSES Optional. Default on: set the same demo quantity on every warehouse linked to the channel (avoids ``Out of stock`` when the channel uses multiple warehouses).
+                               Set to "0"/"false"/"no" to only write stock to the resolved primary warehouse slug.
+  TOYVERSE_REPAIR_PRODUCT_TYPES Optional. If "1", when slug reuse finds wrong Saleor product type vs seed map, delete that product and recreate (fixes older runs stuck on Audiobook / digital checkout).
+  TOYVERSE_PHYSICAL_PRODUCT_TYPE_SLUG Slug for the auto-created physical toy product type (default toyverse-physical). When present in Saleor and shippable, all categories prefer this slug over garment demo types.
+  TOYVERSE_SKIP_PHYSICAL_PRODUCT_TYPE If "1", do not auto-create/update the physical toy product type (use only existing shippable types from the Dashboard).
   TOYVERSE_NAVBAR_CATEGORY_SLUGS Optional comma-separated category slugs for the header menu only (footer keeps full list).
                                Use * or all for every seeded category. Default if unset: educational-toys,baby-toys,board-games,outdoor-toys.
 
@@ -50,7 +60,7 @@ from typing import Any
 
 API_URL = os.environ.get("SALEOR_API_URL", "http://localhost:8000/graphql/").strip()
 TOKEN = os.environ.get("SALEOR_APP_TOKEN", "").strip()
-CHANNEL_SLUG = os.environ.get("TOYVERSE_CHANNEL_SLUG", "default-channel").strip()
+CHANNEL_SLUG = os.environ.get("TOYVERSE_CHANNEL_SLUG", "shop").strip()
 PRODUCT_TYPE_SLUG = os.environ.get("TOYVERSE_PRODUCT_TYPE_SLUG", "").strip()
 IMAGE_BASE = os.environ.get("TOYVERSE_IMAGE_BASE", "https://dummyimage.com").strip().rstrip("/")
 SKIP_MENUS = os.environ.get("TOYVERSE_SKIP_MENUS", "").strip().lower() in ("1", "true", "yes")
@@ -71,13 +81,27 @@ try:
 except ValueError:
     SEED_VARIANT_STOCK_QTY = 120
 
+SYNC_STOCK_ALL_CHANNEL_WHS = os.environ.get("TOYVERSE_SYNC_STOCK_TO_ALL_CHANNEL_WAREHOUSES", "1").strip().lower() not in (
+    "0",
+    "false",
+    "no",
+)
+
+TOYVERSE_PHYSICAL_SLUG_RAW = os.environ.get("TOYVERSE_PHYSICAL_PRODUCT_TYPE_SLUG", "toyverse-physical").strip()
+PHYSICAL_TOY_PRODUCT_TYPE_SLUG = (TOYVERSE_PHYSICAL_SLUG_RAW or "toyverse-physical").lower()
+SKIP_PHYSICAL_PRODUCT_TYPE_CREATE = os.environ.get("TOYVERSE_SKIP_PHYSICAL_PRODUCT_TYPE", "").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+
 EDITOR_VERSION = "2.24.3"
 
-# When Saleor has no matching slug for a category map entry, try these (then any non-audiobook type).
+# When Saleor has no matching slug for a category map entry, try these (then other shippable types).
 _PRODUCT_TYPE_FALLBACK_CHAIN: tuple[str, ...] = ("shirt", "shoe", "beanie", "sweatshirt", "juice")
 
-# Built-in Saleor demo DB slugs (Dashboard names differ): Top→shirt, Beanies & Scarfs→beanie, etc.
-DEFAULT_CATEGORY_PRODUCT_TYPE_SLUG: dict[str, str] = {
+# Built-in garment-style Saleor demo slugs when ToyVerse cannot use ``toyverse-physical``.
+LEGACY_CATEGORY_PRODUCT_TYPE_SLUG: dict[str, str] = {
     "educational-toys": "shirt",
     "baby-toys": "sweatshirt",
     "action-figures": "shoe",
@@ -98,6 +122,55 @@ CATEGORIES: list[tuple[str, str, str, str]] = [
     ("Arts & Crafts", "arts-crafts", "শিল্প ও হস্তশিল্প", "فنون وحِرف يدوية"),
     ("Remote Control Toys", "remote-control-toys", "রিমোট নিয়ন্ত্রিত খেলনা", "ألعاب تحكم عن بعد"),
 ]
+
+GRAPHQL_PRODUCT_TYPES_SHIPPING_SNAPSHOT = """
+query ToyverseProductTypes {
+  productTypes(first: 50) {
+    edges {
+      node {
+        id
+        slug
+        name
+        hasVariants
+        isShippingRequired
+        variantAttributes {
+          id
+          slug
+          inputType
+        }
+      }
+    }
+  }
+}
+"""
+
+
+def _graphql_body(query: str, variables: dict[str, Any] | None = None) -> dict[str, Any]:
+    """POST GraphQL; return parsed body (may include top-level ``errors``). Requires ``SALEOR_APP_TOKEN``."""
+    if not TOKEN:
+        print(
+            "ERROR: Set SALEOR_APP_TOKEN (Dashboard → Apps → catalog + translations permissions).",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    payload = json.dumps({"query": query, "variables": variables or {}}).encode()
+    req = urllib.request.Request(
+        API_URL,
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {TOKEN}",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            body = json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        print(e.read().decode(), file=sys.stderr)
+        raise SystemExit(1) from e
+
+    return body
 
 
 def editor_document(blocks: list[dict[str, Any]]) -> str:
@@ -236,29 +309,7 @@ def demo_product_description_ar(title_ar: str, sku: str) -> str:
 
 
 def gql(query: str, variables: dict[str, Any] | None = None) -> dict[str, Any]:
-    if not TOKEN:
-        print(
-            "ERROR: Set SALEOR_APP_TOKEN (Dashboard → Apps → catalog + translations permissions).",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-    payload = json.dumps({"query": query, "variables": variables or {}}).encode()
-    req = urllib.request.Request(
-        API_URL,
-        data=payload,
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {TOKEN}",
-        },
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=180) as resp:
-            body = json.loads(resp.read().decode())
-    except urllib.error.HTTPError as e:
-        print(e.read().decode(), file=sys.stderr)
-        raise SystemExit(1) from e
-
+    body = _graphql_body(query, variables)
     if body.get("errors"):
         print(json.dumps(body["errors"], indent=2), file=sys.stderr)
         raise SystemExit(1)
@@ -270,22 +321,186 @@ def mutation_errors(data: dict[str, Any], key: str) -> list[dict[str, Any]]:
     return list(obj.get("errors") or [])
 
 
-def index_variant_product_types(data: dict[str, Any]) -> dict[str, tuple[str, list[dict[str, Any]], str]]:
+def node_requires_shipping(n: dict[str, Any]) -> bool:
+    """Prefer physical flow: exclude Saleor ``Audiobook`` and any type with explicit ``isShippingRequired=false``.
+
+    Older APIs may omit ``isShippingRequired`` — treat omit as shippable.
+    """
+    return n.get("isShippingRequired") is not False
+
+
+def collect_shippable_variant_product_types(
+    data: dict[str, Any],
+) -> dict[str, tuple[str, list[dict[str, Any]], str]]:
     """Map lowercase product type slug → (id, variantAttributes, display name).
 
+    Skips ``isShippingRequired=false`` (digital) types so Checkout ``isShippingRequired`` stays True for seeded toys.
+
     Only types with ``hasVariants`` appear here — Saleor demo rows like ``juice`` / ``beanie`` /
-    ``sweatshirt`` often have no variants in DB, so this seed maps toys onto variant types (e.g. shirt, shoe).
+    ``sweatshirt`` often have no variants in DB, so this seed historically mapped toys onto garment types.
+
+    Prefer ``PHYSICAL_TOY_PRODUCT_TYPE_SLUG`` when present; see ``ensure_physical_toy_product_type``.
     """
     index: dict[str, tuple[str, list[dict[str, Any]], str]] = {}
     for e in data.get("productTypes", {}).get("edges", []):
         n = e["node"]
         if not n.get("hasVariants", False):
             continue
+        if not node_requires_shipping(n):
+            continue
         slug = (n.get("slug") or "").lower()
         index[slug] = (n["id"], n.get("variantAttributes") or [], n.get("name") or slug)
-    if not index:
-        raise SystemExit("No product type with variants found. Create one in Dashboard.")
     return index
+
+
+def require_shippable_product_types(
+    pt_index: dict[str, tuple[str, list[dict[str, Any]], str]],
+) -> dict[str, tuple[str, list[dict[str, Any]], str]]:
+    if not pt_index:
+        raise SystemExit(
+            "No shippable product type with variants found. Dashboard → Product types → ensure at least "
+            "one variant-friendly type has 'Shipping required' enabled, grant MANAGE_PRODUCT_TYPES_AND_ATTRIBUTES "
+            "to auto-create "
+            + repr(PHYSICAL_TOY_PRODUCT_TYPE_SLUG)
+            + ", or unset TOYVERSE_SKIP_PHYSICAL_PRODUCT_TYPE.",
+        )
+    return pt_index
+
+
+def ensure_physical_toy_product_type(
+    pt_data: dict[str, Any], pt_index: dict[str, tuple[str, list[dict[str, Any]], str]]
+) -> None:
+    """Create ``PHYSICAL_TOY_PRODUCT_TYPE_SLUG`` via API if missing so toys always checkout with shipping."""
+
+    target = PHYSICAL_TOY_PRODUCT_TYPE_SLUG
+    raw_edges = (pt_data.get("productTypes") or {}).get("edges") or []
+
+    def register_from_saleor(slug_lc: str) -> bool:
+        for e in raw_edges:
+            n = e.get("node") or {}
+            if (n.get("slug") or "").lower() != slug_lc:
+                continue
+            pid = n.get("id")
+            if not pid or not node_requires_shipping(n):
+                print(
+                    f"ToyVerse: product type slug {slug_lc!r} exists but has isShippingRequired=false — "
+                    "Dashboard must enable shipping required for checkout to offer address + methods.",
+                    file=sys.stderr,
+                )
+                return False
+            if not n.get("hasVariants", False):
+                print(
+                    f"ToyVerse: product type {slug_lc!r} exists but hasVariants=false — "
+                    "enable variant products for this type in Dashboard.",
+                    file=sys.stderr,
+                )
+                return False
+            pt_index[slug_lc] = (
+                pid,
+                n.get("variantAttributes") or [],
+                n.get("name") or slug_lc,
+            )
+            return True
+        return False
+
+    if target in pt_index:
+        return
+    register_from_saleor(target)
+
+    if target in pt_index:
+        print(
+            "ToyVerse: using existing product type "
+            f"{PHYSICAL_TOY_PRODUCT_TYPE_SLUG!r} (shippable, variant-capable)",
+            file=sys.stderr,
+        )
+        return
+
+    if SKIP_PHYSICAL_PRODUCT_TYPE_CREATE:
+        print(
+            f"ToyVerse: skipping auto-create ({PHYSICAL_TOY_PRODUCT_TYPE_SLUG!r}) — "
+            "TOYVERSE_SKIP_PHYSICAL_PRODUCT_TYPE=1 → using garment demo types where available.",
+            file=sys.stderr,
+        )
+        return
+
+    m_pt = """
+    mutation ToyversePTCreate($input: ProductTypeInput!) {
+      productTypeCreate(input: $input) {
+        productType {
+          id
+          slug
+          name
+          isShippingRequired
+          variantAttributes {
+            id
+            slug
+            inputType
+          }
+        }
+        errors { field message code }
+      }
+    }
+    """
+
+    inp = {
+        "name": "ToyVerse physical toy",
+        "slug": target,
+        "kind": "NORMAL",
+        "isShippingRequired": True,
+    }
+
+    body = _graphql_body(m_pt, {"input": inp})
+    top_errs = body.get("errors") or []
+    if top_errs:
+        print(
+            "ToyVerse: productTypeCreate skipped (GraphQL permission/runtime error). ",
+            json.dumps(top_errs, indent=2),
+            file=sys.stderr,
+        )
+        print(
+            "  Grant MANAGE_PRODUCT_TYPES_AND_ATTRIBUTES to the App token or create Product type "
+            f"{PHYSICAL_TOY_PRODUCT_TYPE_SLUG!r} in Dashboard with 'Shipping required'.",
+            file=sys.stderr,
+        )
+        return
+
+    pdata = body.get("data") or {}
+    errs = mutation_errors(pdata, "productTypeCreate")
+    if errs:
+        low = json.dumps(errs).lower()
+        slug_exists = "unique" in low or ("slug" in low and ("already exists" in low or "unique" in low))
+        if slug_exists:
+            print(
+                f"ToyVerse: product type slug {target!r} already exists — re-querying snapshot.",
+                file=sys.stderr,
+            )
+            refreshed = gql(GRAPHQL_PRODUCT_TYPES_SHIPPING_SNAPSHOT)
+            tmp = collect_shippable_variant_product_types(refreshed)
+            if target in tmp:
+                pt_index[target] = tmp[target]
+                return
+        print("ToyVerse: productTypeCreate errors:", errs, file=sys.stderr)
+        print(
+            "  Dashboard → Catalog → Product types → enable shipping required for toys, or widen App permissions.",
+            file=sys.stderr,
+        )
+        return
+
+    pt = pdata.get("productTypeCreate", {}).get("productType") or {}
+    pt_id = pt.get("id")
+    if not pt_id:
+        print("ToyVerse: productTypeCreate returned empty productType", file=sys.stderr)
+        return
+    slug_lc = (pt.get("slug") or target).lower()
+    pt_index[slug_lc] = (
+        pt_id,
+        pt.get("variantAttributes") or [],
+        pt.get("name") or slug_lc,
+    )
+    print(
+        f"ToyVerse: created shippable product type {slug_lc!r} — checkout will require shipping address and methods",
+        file=sys.stderr,
+    )
 
 
 def category_product_type_overrides_from_env() -> dict[str, str]:
@@ -301,15 +516,21 @@ def category_product_type_overrides_from_env() -> dict[str, str]:
     return {str(k).lower(): str(v).lower() for k, v in parsed.items()}
 
 
-def merged_category_product_type_map() -> dict[str, str]:
-    merged = dict(DEFAULT_CATEGORY_PRODUCT_TYPE_SLUG)
+def merged_category_product_type_map(
+    pt_index: dict[str, tuple[str, list[dict[str, Any]], str]],
+) -> dict[str, str]:
+    merged = dict(LEGACY_CATEGORY_PRODUCT_TYPE_SLUG)
+    phy = PHYSICAL_TOY_PRODUCT_TYPE_SLUG
+    if phy in pt_index:
+        for _name_en, cat_slug, *_ in CATEGORIES:
+            merged[cat_slug] = phy
     merged.update(category_product_type_overrides_from_env())
     missing = [s for _, s, _, _ in CATEGORIES if s not in merged]
     if missing:
         raise SystemExit(
             "ToyVerse category slugs missing from product-type map: "
             + ", ".join(missing)
-            + ". Edit DEFAULT_CATEGORY_PRODUCT_TYPE_SLUG or set TOYVERSE_CATEGORY_PRODUCT_TYPES_JSON.",
+            + ". Edit LEGACY_CATEGORY_PRODUCT_TYPE_SLUG or set TOYVERSE_CATEGORY_PRODUCT_TYPES_JSON.",
         )
     return merged
 
@@ -328,7 +549,7 @@ def resolve_product_type_for_category(
     available = ", ".join(sorted(pt_index.keys()))
     if forced:
         raise SystemExit(
-            f"Product type slug {slug_wanted!r} not found (TOYVERSE_PRODUCT_TYPE_SLUG). Available variant types: {available}",
+            f"Product type slug {slug_wanted!r} not found (TOYVERSE_PRODUCT_TYPE_SLUG). Available shippable types: {available}",
         )
 
     env_fb = os.environ.get("TOYVERSE_FALLBACK_PRODUCT_TYPE_SLUG", "").strip().lower()
@@ -337,7 +558,7 @@ def resolve_product_type_for_category(
         candidates.append(env_fb)
     candidates.extend(s for s in _PRODUCT_TYPE_FALLBACK_CHAIN if s in pt_index and s not in candidates)
     for k in sorted(pt_index.keys()):
-        if k != "audiobook" and k not in candidates:
+        if k not in candidates:
             candidates.append(k)
 
     for slug_used in candidates:
@@ -348,17 +569,8 @@ def resolve_product_type_for_category(
         )
         return pid, attrs, slug_used, pname
 
-    if "audiobook" in pt_index:
-        print(
-            "ToyVerse: only variant product type is 'audiobook'; using it. Add shirt/shoe in Dashboard or set "
-            "TOYVERSE_FALLBACK_PRODUCT_TYPE_SLUG / TOYVERSE_PRODUCT_TYPE_SLUG.",
-            file=sys.stderr,
-        )
-        pid, attrs, pname = pt_index["audiobook"]
-        return pid, attrs, "audiobook", pname
-
     raise SystemExit(
-        f"Product type slug {slug_wanted!r} not found. Available variant types: {available}",
+        f"Product type slug {slug_wanted!r} not found. Available shippable types: {available}",
     )
 
 
@@ -896,7 +1108,7 @@ def apply_product_translations(product_id: str, translations: list[tuple[str, st
 def create_product_flow(
     *,
     channel_id: str,
-    warehouse_id: str,
+    stock_warehouse_ids: list[str],
     category_id: str,
     product_type_id: str,
     variant_attrs: list[dict[str, Any]],
@@ -951,7 +1163,11 @@ def create_product_flow(
                 "sku": sku,
                 "trackInventory": True,
                 "attributes": attr_inputs,
-                "stocks": [{"warehouse": warehouse_id, "quantity": SEED_VARIANT_STOCK_QTY}],
+                "stocks": [
+                    {"warehouse": wid, "quantity": SEED_VARIANT_STOCK_QTY}
+                    for wid in stock_warehouse_ids
+                    if wid
+                ],
             },
         },
     )
@@ -1012,10 +1228,26 @@ def create_product_flow(
     return pid
 
 
-def sync_product_variants_stock_to_warehouse(product_id: str, warehouse_id: str, quantity: int) -> None:
-    """Set ``quantity`` in ``warehouse_id`` for every variant via productVariantStocksUpdate (slug-reuse parity)."""
+def sync_product_variants_stock_to_warehouses(
+    product_id: str,
+    warehouse_ids: list[str],
+    quantity: int,
+) -> None:
+    """Set ``quantity`` across ``warehouse_ids`` for every variant (one mutation per variant).
+
+    Saleor accepts multiple ``StockInput`` entries so all channel-linked warehouses get the same shelf quantity.
+    """
     if quantity <= 0:
         return
+    unique_wh: list[str] = []
+    seen: set[str] = set()
+    for wid in warehouse_ids:
+        if wid and wid not in seen:
+            seen.add(wid)
+            unique_wh.append(wid)
+    if not unique_wh:
+        return
+
     q_vars = """
     query Pvars($id: ID!) {
       product(id: $id) {
@@ -1041,12 +1273,13 @@ def sync_product_variants_stock_to_warehouse(product_id: str, warehouse_id: str,
       }
     }
     """
+    stocks_payload = [{"warehouse": wid, "quantity": quantity} for wid in unique_wh]
     for v in variants:
         data = gql(
             m_stocks,
             {
                 "variantId": v["id"],
-                "stocks": [{"warehouse": warehouse_id, "quantity": quantity}],
+                "stocks": stocks_payload,
             },
         )
         errs = mutation_errors(data, "productVariantStocksUpdate")
@@ -1054,7 +1287,88 @@ def sync_product_variants_stock_to_warehouse(product_id: str, warehouse_id: str,
             print(f"  productVariantStocksUpdate SKU={v.get('sku')!r}:", errs, file=sys.stderr)
 
 
-def pick_primary_warehouse_id() -> str:
+def fetch_channel_warehouse_nodes(channel_id: str) -> list[dict[str, Any]]:
+    """Warehouses currently linked to this channel (availability + ``quantityAvailable`` use these)."""
+    data = gql(
+        """
+        query CHW($id: ID!) {
+          channel(id: $id) {
+            id
+            slug
+            warehouses { id slug name }
+          }
+        }
+        """,
+        {"id": channel_id},
+    )
+    ch = data.get("channel")
+    if not ch:
+        raise SystemExit(f"Channel id not resolved: {channel_id!r}")
+    return list(ch.get("warehouses") or [])
+
+
+def ensure_warehouse_linked_to_channel(channel_id: str, warehouse_id: str) -> None:
+    """If the primary warehouse is not on the channel, link it (needs ``MANAGE_CHANNELS`` on the App token)."""
+    nodes = fetch_channel_warehouse_nodes(channel_id)
+    if any((n.get("id") == warehouse_id for n in nodes)):
+        return
+    m = """
+    mutation CHU($id: ID!, $input: ChannelUpdateInput!) {
+      channelUpdate(id: $id, input: $input) {
+        channel { id slug warehouses { id slug } }
+        errors { field message code }
+      }
+    }
+    """
+    body = _graphql_body(m, {"id": channel_id, "input": {"addWarehouses": [warehouse_id]}})
+    if body.get("errors"):
+        print(
+            "ToyVerse: channelUpdate addWarehouses skipped (GraphQL error). "
+            + json.dumps(body.get("errors")),
+            file=sys.stderr,
+        )
+        print(
+            "  Link the primary warehouse to your channel in Dashboard → Channels → "
+            f"{CHANNEL_SLUG!r} → Warehouses, or grant MANAGE_CHANNELS to the App token.",
+            file=sys.stderr,
+        )
+        return
+    pdata = body.get("data") or {}
+    errs = mutation_errors(pdata, "channelUpdate")
+    if errs:
+        print("ToyVerse: channelUpdate errors:", errs, file=sys.stderr)
+        print(
+            "  Dashboard → Channels → Warehouses: add the warehouse ToyVerse stocks (often slug `default`).",
+            file=sys.stderr,
+        )
+        return
+
+
+def resolve_stock_target_warehouse_ids(channel_id: str, primary_warehouse_id: str) -> list[str]:
+    """Return warehouse IDs to write stock to: all channel warehouses when enabled, else primary only.
+
+    Saleor ``quantityAvailable`` for a channel respects stock in warehouses **linked to that channel**
+    and reachable for shipping; syncing only to an unlinked warehouse shows **Out of stock** on the storefront.
+    """
+    if not SYNC_STOCK_ALL_CHANNEL_WHS:
+        return [primary_warehouse_id]
+
+    linked = fetch_channel_warehouse_nodes(channel_id)
+    ids: list[str] = []
+    seen: set[str] = set()
+    for n in linked:
+        wid = n.get("id")
+        if isinstance(wid, str) and wid not in seen:
+            seen.add(wid)
+            ids.append(wid)
+
+    if primary_warehouse_id not in seen:
+        ids.insert(0, primary_warehouse_id)
+
+    return ids if ids else [primary_warehouse_id]
+
+
+def pick_primary_warehouse_id(on_channel_ids: set[str] | None = None) -> str:
     """Choose a warehouse for variant stock — do not blindly use warehouses(first:N)[0].
 
     PopulateDB/Dashboard setups often put **Oceania** first; channel shipping zones for a local
@@ -1062,9 +1376,9 @@ def pick_primary_warehouse_id() -> str:
     saw "0 remaining" despite stock on Oceania.
 
     Priority:
-      1. ``TOYVERSE_WAREHOUSE_SLUG`` (single) or ``TOYVERSE_WAREHOUSE_SLUGS`` (comma list, first match)
-      2. Otherwise pick the warehouse that best matches slug/name hints (``default``, ``warehouse``,
-         ``click``, ``collect``) and **deprioritize** ``oceania``.
+      1. Warehouses already linked to the channel (passed as ``on_channel_ids``).
+      2. ``TOYVERSE_WAREHOUSE_SLUG`` (single) or ``TOYVERSE_WAREHOUSE_SLUGS`` (comma list, first match)
+      3. Otherwise score by slug/name (``default``, …) and deprioritize ``oceania``.
     """
 
     slug_override = os.environ.get("TOYVERSE_WAREHOUSE_SLUG", "").strip()
@@ -1096,6 +1410,13 @@ def pick_primary_warehouse_id() -> str:
             + f". Existing slugs: {known}",
         )
 
+    candidate_pool: list[dict[str, Any]]
+    if on_channel_ids:
+        scoped = [n for n in nodes if n["id"] in on_channel_ids]
+        candidate_pool = scoped if scoped else nodes
+    else:
+        candidate_pool = nodes
+
     def score_wh(n: dict[str, Any]) -> tuple[int, str]:
         slug = (n.get("slug") or "").lower()
         name = (n.get("name") or "").lower()
@@ -1110,15 +1431,22 @@ def pick_primary_warehouse_id() -> str:
             s += 20
         return (s, slug)
 
-    chosen = max(nodes, key=score_wh)
-    print(
-        "  warehouse (auto): slug="
-        + repr(chosen.get("slug"))
-        + " name="
-        + repr(chosen.get("name"))
-        + " (set TOYVERSE_WAREHOUSE_SLUG to pin another)",
-        file=sys.stderr,
-    )
+    chosen = max(candidate_pool, key=score_wh)
+    if len(candidate_pool) < len(nodes):
+        print(
+            f"  warehouse (prefer channel-linked): slug={chosen.get('slug')!r} "
+            f"(among {len(candidate_pool)} warehouses on channel {CHANNEL_SLUG!r})",
+            file=sys.stderr,
+        )
+    else:
+        print(
+            "  warehouse (auto): slug="
+            + repr(chosen.get("slug"))
+            + " name="
+            + repr(chosen.get("name"))
+            + " (set TOYVERSE_WAREHOUSE_SLUG to pin another)",
+            file=sys.stderr,
+        )
     return chosen["id"]
 
 
@@ -1171,30 +1499,30 @@ def main() -> None:
     if not channel_id:
         raise SystemExit(f"Active channel slug not found: {CHANNEL_SLUG}")
 
-    warehouse_id = pick_primary_warehouse_id()
+    ch_wh_nodes_initial = fetch_channel_warehouse_nodes(channel_id)
+    on_channel_ids: set[str] | None = None
+    if ch_wh_nodes_initial:
+        on_channel_ids = {n["id"] for n in ch_wh_nodes_initial if n.get("id")}
 
-    pt_query = """
-    query PT {
-      productTypes(first: 50) {
-        edges {
-          node {
-            id
-            slug
-            name
-            hasVariants
-            variantAttributes {
-              id
-              slug
-              inputType
-            }
-          }
-        }
-      }
-    }
-    """
-    pt_data = gql(pt_query)
-    pt_index = index_variant_product_types(pt_data)
-    cat_pt_map = merged_category_product_type_map()
+    warehouse_id = pick_primary_warehouse_id(on_channel_ids)
+    ensure_warehouse_linked_to_channel(channel_id, warehouse_id)
+
+    stock_warehouse_ids = resolve_stock_target_warehouse_ids(channel_id, warehouse_id)
+    if not stock_warehouse_ids:
+        stock_warehouse_ids = [warehouse_id]
+    wh_snap = fetch_channel_warehouse_nodes(channel_id)
+    id_slug = {n["id"]: (n.get("slug") or "?") for n in wh_snap if n.get("id")}
+    wh_desc = ",".join(id_slug.get(w, w[-12:]) for w in stock_warehouse_ids)
+    print(
+        f"ToyVerse: variant stock qty={SEED_VARIANT_STOCK_QTY} → warehouse slug(s): {wh_desc}",
+        file=sys.stderr,
+    )
+
+    pt_data = gql(GRAPHQL_PRODUCT_TYPES_SHIPPING_SNAPSHOT)
+    pt_index = collect_shippable_variant_product_types(pt_data)
+    ensure_physical_toy_product_type(pt_data, pt_index)
+    require_shippable_product_types(pt_index)
+    cat_pt_map = merged_category_product_type_map(pt_index)
 
     if PRODUCT_TYPE_SLUG:
         print(f"All products use forced type slug {PRODUCT_TYPE_SLUG!r} (TOYVERSE_PRODUCT_TYPE_SLUG).")
@@ -1262,7 +1590,7 @@ def main() -> None:
         try:
             pid = create_product_flow(
                 channel_id=channel_id,
-                warehouse_id=warehouse_id,
+                stock_warehouse_ids=stock_warehouse_ids,
                 category_id=cid,
                 product_type_id=product_type_id,
                 variant_attrs=variant_attrs,
@@ -1309,7 +1637,7 @@ def main() -> None:
                             if product_delete(existing):
                                 pid = create_product_flow(
                                     channel_id=channel_id,
-                                    warehouse_id=warehouse_id,
+                                    stock_warehouse_ids=stock_warehouse_ids,
                                     category_id=cid,
                                     product_type_id=product_type_id,
                                     variant_attrs=variant_attrs,
@@ -1340,9 +1668,9 @@ def main() -> None:
                             ],
                         )
                         if not SKIP_STOCK_SYNC_ON_REUSE:
-                            sync_product_variants_stock_to_warehouse(
+                            sync_product_variants_stock_to_warehouses(
                                 existing,
-                                warehouse_id,
+                                stock_warehouse_ids,
                                 SEED_VARIANT_STOCK_QTY,
                             )
                         print(

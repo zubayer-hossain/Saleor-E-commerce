@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback, type FC } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/ui/components/ui/button";
-import { ExpressCheckout } from "@/checkout/components/express-checkout";
 import {
 	type CheckoutFragment,
 	type CountryCode,
@@ -392,7 +391,6 @@ export const InformationStep: FC<InformationStepProps> = ({ checkout, onNext }) 
 	if (contactView === "resetPassword") {
 		return (
 			<div className="space-y-8">
-				<ExpressCheckout />
 				<ResetPasswordForm
 					onSuccess={() => setContactView("main")}
 					onBackToSignIn={() => {
@@ -412,7 +410,6 @@ export const InformationStep: FC<InformationStepProps> = ({ checkout, onNext }) 
 	if (contactView === "signIn") {
 		return (
 			<div className="space-y-8">
-				<ExpressCheckout />
 				<SignInForm
 					initialEmail={email}
 					channelSlug={checkout.channel.slug}
@@ -432,12 +429,11 @@ export const InformationStep: FC<InformationStepProps> = ({ checkout, onNext }) 
 
 	return (
 		<form className="space-y-8" onSubmit={handleSubmit} noValidate>
-			<ExpressCheckout />
-
 			<ContactSection
 				isSignedIn={authenticated}
 				user={user}
-				onSignOut={() => {}} // User signs out via header
+				// Signed-in users sign out from this section ( clears Saleor JWT cookies ); urql client resets in AuthProvider
+				onSignOut={() => {}}
 				onSignInClick={() => setContactView("signIn")}
 				email={email}
 				onEmailChange={handleEmailChange}

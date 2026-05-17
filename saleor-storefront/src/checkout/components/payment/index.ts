@@ -1,12 +1,6 @@
-/** Payment components: method selection, card form, billing address. */
+/** Payment components: Stripe form + billing address. */
 
-export {
-	PaymentMethodSelector,
-	isCardDataValid,
-	type PaymentMethodType,
-	type CardData,
-	type PaymentMethodSelectorProps,
-} from "./payment-method-selector";
+export { StripePaymentForm, type StripePaymentFormProps } from "./stripe-payment-form";
 
 export {
 	BillingAddressSection,

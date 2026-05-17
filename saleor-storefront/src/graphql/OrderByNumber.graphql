@@ -72,6 +72,13 @@ fragment OrderFullDetails on Order {
 			}
 		}
 	}
+	invoices {
+		id
+		number
+		url
+		status
+		createdAt
+	}
 }
 
 query OrderByNumber($first: Int) {

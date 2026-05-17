@@ -7,6 +7,7 @@ import { type ReactNode } from "react";
 import { rootMetadata } from "@/lib/seo";
 import { localeConfig } from "@/config/locale";
 import { SpeedInsights } from "@vercel/speed-insights/next";
+import { RootProviders } from "@/ui/components/providers/root-providers";
 
 /**
  * Root metadata for the entire site.
@@ -23,7 +24,7 @@ export default function RootLayout(props: { children: ReactNode }) {
 			className={`${GeistSans.variable} ${GeistMono.variable} min-h-dvh`}
 		>
 			<body className="min-h-dvh font-sans">
-				{children}
+				<RootProviders>{children}</RootProviders>
 				<SpeedInsights />
 			</body>
 		</html>

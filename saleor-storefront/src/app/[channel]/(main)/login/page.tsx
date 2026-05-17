@@ -1,10 +1,8 @@
 import { Suspense } from "react";
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { LoginForm } from "@/ui/components/login-form";
-import { executeAuthenticatedGraphQL } from "@/lib/graphql";
-import { CurrentUserDocument } from "@/gql/graphql";
 import { AuthProvider } from "@/lib/auth";
+import { fetchAccountSession } from "@/lib/auth/account-session";
 
 export const metadata = {
 	title: "Sign In",
@@ -51,28 +49,18 @@ function LoginSkeleton() {
 async function LoginContent({ params: paramsPromise }: { params: Promise<{ channel: string }> }) {
 	const { channel } = await paramsPromise;
 
-	let hasCookies = false;
-	try {
-		const cookieStore = await cookies();
-		hasCookies = cookieStore.getAll().length > 0;
-	} catch {
-		// Static generation -- cookies() unavailable
-	}
+	const session = await fetchAccountSession();
 
-	if (hasCookies) {
-		const result = await executeAuthenticatedGraphQL(CurrentUserDocument, {
-			cache: "no-cache",
-		});
-
-		if (result.ok && result.data.me) {
-			redirect(`/${channel}`);
-		}
+	if (session.status === "authenticated") {
+		redirect(`/${channel}`);
 	}
 
 	return (
 		<section className="mx-auto max-w-7xl p-8 pb-24">
 			<AuthProvider>
-				<LoginForm />
+				<Suspense fallback={<LoginSkeleton />}>
+					<LoginForm />
+				</Suspense>
 			</AuthProvider>
 		</section>
 	);

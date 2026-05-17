@@ -62,6 +62,18 @@ query CheckoutFind($id: ID!) {
 				}
 			}
 		}
+		subtotalPrice {
+			gross {
+				amount
+				currency
+			}
+		}
+		shippingPrice {
+			gross {
+				amount
+				currency
+			}
+		}
 		totalPrice {
 			gross {
 				amount

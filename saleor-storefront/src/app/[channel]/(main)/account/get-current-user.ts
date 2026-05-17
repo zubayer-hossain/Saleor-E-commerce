@@ -1,18 +1,14 @@
-import { cache } from "react";
-import { CurrentUserProfileDocument, type CurrentUserProfileQuery } from "@/gql/graphql";
-import { executeAuthenticatedGraphQL } from "@/lib/graphql";
+import type { AccountUser } from "@/lib/auth/account-session";
+import { fetchAccountSession } from "@/lib/auth/account-session";
 
-export type AccountUser = NonNullable<CurrentUserProfileQuery["me"]>;
+export type { AccountUser };
 
 /**
- * Fetch the current user profile, memoized per request via React cache().
- * The layout calls this for auth gating; child pages call it too at zero
- * extra cost -- React deduplicates within the same server render.
+ * Fetch the current user profile for account pages (memoized per request via fetchAccountSession cache).
  */
-export const getCurrentUser = cache(async (): Promise<AccountUser | null> => {
-	const result = await executeAuthenticatedGraphQL(CurrentUserProfileDocument, {
-		cache: "no-cache",
-	});
-	if (!result.ok || !result.data.me) return null;
-	return result.data.me;
-});
+export async function getCurrentUser(): Promise<AccountUser | null> {
+	const session = await fetchAccountSession();
+	return session.status === "authenticated" ? session.user : null;
+}
+
+export { fetchAccountSession };

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, type FC } from "react";
+import { useState, useCallback, useEffect, useRef, type FC } from "react";
 import { Truck, Clock, Leaf, ChevronLeft } from "lucide-react";
 import { Button } from "@/ui/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -33,8 +33,70 @@ export const ShippingStep: FC<ShippingStepProps> = ({ checkout: initialCheckout,
 	const [isSubmittingLocal, setIsSubmittingLocal] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
-	// Mutation
+	// Mutation (also used when switching methods so totals in OrderSummary stay in sync with Saleor)
 	const [, updateDeliveryMethod] = useCheckoutDeliveryMethodUpdateMutation();
+
+	const persistDeliveryMethod = useCallback(
+		async (methodId: string): Promise<boolean> => {
+			if (!methodId || methodId === currentMethodId) {
+				return true;
+			}
+			const languageCode = readSaleorLanguageCodeFromDocumentCookie();
+			const result = await updateDeliveryMethod({
+				checkoutId: checkout.id,
+				deliveryMethodId: methodId,
+				languageCode,
+			});
+			if (result.error) {
+				setError("Failed to update shipping method");
+				return false;
+			}
+			const gqlErrors =
+				result.data?.checkoutDeliveryMethodUpdate?.errors?.filter(Boolean) ?? ([] as unknown[]);
+			if (Array.isArray(gqlErrors) && gqlErrors.length > 0) {
+				const messages = gqlErrors
+					.map((e: unknown) => (e as { message?: string }).message)
+					.filter(Boolean)
+					.join(" ");
+				setError(messages || "Could not set shipping method");
+				return false;
+			}
+			setError(null);
+			return true;
+		},
+		[checkout.id, currentMethodId, updateDeliveryMethod],
+	);
+
+	/** First visit to Shipping often has UI pre-selecting method #1 before Saleor has a deliveryMethod set */
+	const bootstrapDeliveryRef = useRef(false);
+
+	useEffect(() => {
+		if (bootstrapDeliveryRef.current || fetching || !shippingMethods.length || !checkout.id) {
+			return;
+		}
+		if (currentMethodId) {
+			bootstrapDeliveryRef.current = true;
+			return;
+		}
+		const target = selectedMethod || shippingMethods[0]?.id;
+		if (!target) {
+			return;
+		}
+		void (async () => {
+			bootstrapDeliveryRef.current = true;
+			const ok = await persistDeliveryMethod(target);
+			if (!ok) {
+				bootstrapDeliveryRef.current = false;
+			}
+		})();
+	}, [
+		fetching,
+		shippingMethods.length,
+		currentMethodId,
+		selectedMethod,
+		checkout.id,
+		persistDeliveryMethod,
+	]);
 
 	// Summary rows for context display
 	const summaryRows = buildShippingSummaryRows(checkout);
@@ -65,34 +127,20 @@ export const ShippingStep: FC<ShippingStepProps> = ({ checkout: initialCheckout,
 				return;
 			}
 
-			// Skip API call if method hasn't changed
-			if (selectedMethod === currentMethodId) {
-				onNext();
-				return;
-			}
-
+			// Persist if needed (radios normally sync immediately; Continue is the safety net)
 			setIsSubmittingLocal(true);
 			setError(null);
 
 			try {
-				const languageCode = readSaleorLanguageCodeFromDocumentCookie();
-				const result = await updateDeliveryMethod({
-					checkoutId: checkout.id,
-					deliveryMethodId: selectedMethod,
-					languageCode,
-				});
-
-				if (result.error) {
-					setError("Failed to update shipping method");
-					return;
+				const ok = await persistDeliveryMethod(selectedMethod);
+				if (ok) {
+					onNext();
 				}
-
-				onNext();
 			} finally {
 				setIsSubmittingLocal(false);
 			}
 		},
-		[selectedMethod, currentMethodId, onNext, updateDeliveryMethod, checkout.id],
+		[selectedMethod, persistDeliveryMethod, onNext],
 	);
 
 	const buttonText = isSubmittingLocal ? "Saving..." : "Continue to payment";
@@ -151,6 +199,7 @@ export const ShippingStep: FC<ShippingStepProps> = ({ checkout: initialCheckout,
 										onChange={() => {
 											setSelectedMethod(method.id);
 											setError(null);
+											void persistDeliveryMethod(method.id);
 										}}
 										className="sr-only"
 									/>

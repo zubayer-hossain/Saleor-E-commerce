@@ -1,13 +1,20 @@
 "use client";
 
-import { useState, type FC } from "react";
+import { useCallback, useEffect, useState, type FC } from "react";
 import Image from "next/image";
 import { Tag, ShieldCheck, RotateCcw, Truck, ChevronDown, ShoppingBag } from "lucide-react";
 import { Button } from "@/ui/components/ui/button";
 import { Input } from "@/ui/components/ui/input";
 import { cn } from "@/lib/utils";
-import { type CheckoutFragment, type OrderFragment } from "@/checkout/graphql";
+import {
+	type CheckoutFragment,
+	type OrderFragment,
+	useCheckoutAddPromoCodeMutation,
+	useCheckoutRemovePromoCodeMutation,
+} from "@/checkout/graphql";
+import { useCheckout } from "@/checkout/hooks/use-checkout";
 import { localeConfig } from "@/config/locale";
+import { readSaleorLanguageCodeFromDocumentCookie } from "@/lib/saleor-language-cookie";
 
 // ============================================================================
 // Types
@@ -44,6 +51,20 @@ interface OrderSummaryProps {
 // Data Adapters
 // ============================================================================
 
+/**
+ * Checkout.discount.amount can linger out of sync with voucher state in cached responses.
+ * Only surface a voucher/gift-card "Discount" line when Saleor indicates an active deduction source.
+ */
+function checkoutPromotionalDiscount(checkout: CheckoutFragment): number {
+	const amount = checkout.discount?.amount ?? 0;
+	const hasGiftCard = Boolean(checkout.giftCards?.length);
+	const hasVoucher = Boolean(checkout.voucherCode?.trim());
+	if (!hasGiftCard && !hasVoucher) {
+		return 0;
+	}
+	return amount > 0 ? amount : 0;
+}
+
 function extractCheckoutData(checkout: CheckoutFragment): OrderSummaryData {
 	const lines: LineItem[] = checkout.lines.map((line) => {
 		const variantImage = line.variant?.media?.find((m) => m.type === "IMAGE");
@@ -71,7 +92,7 @@ function extractCheckoutData(checkout: CheckoutFragment): OrderSummaryData {
 		subtotal: checkout.subtotalPrice?.gross?.amount || 0,
 		shipping: checkout.shippingPrice?.gross?.amount || 0,
 		tax: checkout.totalPrice?.tax?.amount || 0,
-		discount: checkout.discount?.amount || 0,
+		discount: checkoutPromotionalDiscount(checkout),
 		total: checkout.totalPrice?.gross?.amount || 0,
 		editable: true,
 	};
@@ -114,10 +135,22 @@ function extractOrderData(order: OrderFragment): OrderSummaryData {
 // ============================================================================
 
 export const OrderSummary: FC<OrderSummaryProps> = ({ checkout, order, editable }) => {
+	const { refetch: refetchCheckout } = useCheckout({ pause: !checkout });
+	const [, addPromoCode] = useCheckoutAddPromoCodeMutation();
+	const [, removePromoCode] = useCheckoutRemovePromoCodeMutation();
+
+	const voucherCode = checkout?.voucherCode ?? null;
+
 	const [promoCode, setPromoCode] = useState("");
-	const [promoApplied, setPromoApplied] = useState(false);
-	// Collapsed by default on mobile
+	const [promoBusy, setPromoBusy] = useState(false);
+	const [promoError, setPromoError] = useState<string | null>(null);
 	const [isExpanded, setIsExpanded] = useState(false);
+
+	useEffect(() => {
+		if (!checkout) return;
+		setPromoCode(voucherCode ?? "");
+		setPromoError(null);
+	}, [checkout, voucherCode]);
 
 	// Extract data from either checkout or order
 	const data = checkout ? extractCheckoutData(checkout) : order ? extractOrderData(order) : null;
@@ -137,12 +170,82 @@ export const OrderSummary: FC<OrderSummaryProps> = ({ checkout, order, editable 
 		}).format(amount);
 	};
 
-	const handleApplyPromo = () => {
-		// TODO: Call Saleor mutation to apply promo code
-		if (promoCode.toLowerCase() === "saleor10") {
-			setPromoApplied(true);
+	const handleApplyPromo = useCallback(async () => {
+		if (!checkout?.id || !promoCode.trim()) {
+			setPromoError("Enter a discount code.");
+			return;
 		}
-	};
+
+		setPromoBusy(true);
+		setPromoError(null);
+
+		try {
+			const languageCode = readSaleorLanguageCodeFromDocumentCookie();
+			const result = await addPromoCode({
+				checkoutId: checkout.id,
+				promoCode: promoCode.trim(),
+				languageCode,
+			});
+
+			if (result.error) {
+				setPromoError("Could not apply promo code (network error). Try again.");
+				return;
+			}
+
+			const errs = result.data?.checkoutAddPromoCode?.errors ?? [];
+			if (errs.length > 0) {
+				setPromoError(
+					errs
+						.map((e: { message?: string }) => e.message)
+						.filter(Boolean)
+						.join(" ") || "This promo code could not be applied.",
+				);
+				return;
+			}
+
+			await refetchCheckout({ requestPolicy: "network-only" });
+		} finally {
+			setPromoBusy(false);
+		}
+	}, [addPromoCode, checkout?.id, promoCode, refetchCheckout]);
+
+	const handleRemovePromo = useCallback(async () => {
+		if (!checkout?.id || !voucherCode) {
+			return;
+		}
+
+		setPromoBusy(true);
+		setPromoError(null);
+
+		try {
+			const languageCode = readSaleorLanguageCodeFromDocumentCookie();
+			const result = await removePromoCode({
+				checkoutId: checkout.id,
+				promoCode: voucherCode,
+				languageCode,
+			});
+
+			if (result.error) {
+				setPromoError("Could not remove promo code (network error). Try again.");
+				return;
+			}
+
+			const errs = result.data?.checkoutRemovePromoCode?.errors ?? [];
+			if (errs.length > 0) {
+				setPromoError(
+					errs
+						.map((e: { message?: string }) => e.message)
+						.filter(Boolean)
+						.join(" ") || "Could not remove this promo.",
+				);
+				return;
+			}
+
+			await refetchCheckout({ requestPolicy: "network-only" });
+		} finally {
+			setPromoBusy(false);
+		}
+	}, [checkout?.id, removePromoCode, refetchCheckout, voucherCode]);
 
 	// Product thumbnails for collapsed state (show max 2 for cleaner look)
 	const thumbnails = lines.slice(0, 2);
@@ -275,37 +378,61 @@ export const OrderSummary: FC<OrderSummaryProps> = ({ checkout, order, editable 
 						</ul>
 					</section>
 
-					{/* Discounts - only for editable checkout */}
-					{isEditable && (
+					{/* Discount code — wired to Saleor checkoutAddPromoCode / checkoutRemovePromoCode */}
+					{isEditable && checkout && (
 						<section className="border-t border-border px-5 py-4">
 							<form
-								className="flex gap-2"
+								className="flex flex-wrap gap-2"
 								onSubmit={(e) => {
 									e.preventDefault();
-									handleApplyPromo();
+									void handleApplyPromo();
 								}}
 							>
-								<div className="relative flex-1">
+								<div className="relative min-w-0 flex-1">
 									<Tag className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
 									<Input
 										placeholder="Discount code"
 										value={promoCode}
-										onChange={(e) => setPromoCode(e.target.value)}
+										onChange={(e) => {
+											setPromoCode(e.target.value);
+											setPromoError(null);
+										}}
 										className="h-10 bg-white pl-10 text-sm"
-										disabled={promoApplied}
+										disabled={promoBusy || Boolean(voucherCode)}
+										autoComplete="off"
 									/>
 								</div>
-								<Button
-									type="submit"
-									variant="outline-solid"
-									disabled={!promoCode || promoApplied}
-									className="h-10 bg-white px-4 text-sm"
-								>
-									{promoApplied ? "Applied" : "Apply"}
-								</Button>
+								{voucherCode ? (
+									<Button
+										type="button"
+										variant="outline-solid"
+										className="h-10 shrink-0 bg-white px-4 text-sm"
+										disabled={promoBusy}
+										onClick={() => void handleRemovePromo()}
+									>
+										Remove
+									</Button>
+								) : (
+									<Button
+										type="submit"
+										variant="outline-solid"
+										disabled={!promoCode.trim() || promoBusy}
+										className="h-10 shrink-0 bg-white px-4 text-sm"
+									>
+										{promoBusy ? "Applying..." : "Apply"}
+									</Button>
+								)}
 							</form>
-							{promoApplied && (
-								<p className="mt-2 text-sm font-medium text-green-600">SALEOR10 - 10% discount applied</p>
+							{promoError && (
+								<p className="mt-2 text-sm text-destructive" role="alert">
+									{promoError}
+								</p>
+							)}
+							{voucherCode && !promoError && (
+								<p className="mt-2 text-sm font-medium text-green-700">
+									Applied: {checkout.discountName || checkout.translatedDiscountName || voucherCode}. Totals
+									below refresh from Saleor.
+								</p>
 							)}
 						</section>
 					)}
@@ -331,7 +458,14 @@ export const OrderSummary: FC<OrderSummaryProps> = ({ checkout, order, editable 
 							)}
 							{discount > 0 && (
 								<div className="flex justify-between text-green-600">
-									<dt>Discount</dt>
+									<dt className="max-w-[60%] pr-2">
+										<span className="block">Discount</span>
+										{checkout?.voucherCode && (
+											<span className="mt-0.5 block text-xs font-normal text-muted-foreground">
+												{checkout.discountName || checkout.translatedDiscountName || checkout.voucherCode}
+											</span>
+										)}
+									</dt>
 									<dd>-{formatMoney(discount)}</dd>
 								</div>
 							)}

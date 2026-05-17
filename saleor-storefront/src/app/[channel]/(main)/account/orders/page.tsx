@@ -4,6 +4,7 @@ import { OrderRow } from "@/ui/components/account/order-row";
 import { LinkWithChannel } from "@/ui/atoms/link-with-channel";
 import { Button } from "@/ui/components/ui/button";
 import { accountRoutes } from "@/ui/components/account/routes";
+import { AccountAuthUnavailable } from "@/ui/components/account/account-auth-unavailable";
 
 const ORDERS_PER_PAGE = 10;
 
@@ -22,7 +23,14 @@ export default async function AccountOrdersPage({ searchParams }: Props) {
 		cache: "no-cache",
 	});
 
-	if (!result.ok || !result.data.me) {
+	if (!result.ok) {
+		if (result.error.type === "network") {
+			return <AccountAuthUnavailable message={result.error.message} />;
+		}
+		return null;
+	}
+
+	if (!result.data.me) {
 		return null;
 	}
 

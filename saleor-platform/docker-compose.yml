@@ -65,6 +65,11 @@ services:
     env_file:
       - common.env
       - backend.env
+    # Async webhooks (e.g. INVOICE_REQUESTED) POST from Celery. common.env sets
+    # HTTP_IP_FILTER_ENABLED=True — Saleor then rejects Docker-internal URLs like
+    # http://storefront:3000 as non-public IPs ("Invalid IP address"). Match api.
+    environment:
+      - HTTP_IP_FILTER_ENABLED=False
     depends_on:
       - cache
       - mailpit
@@ -101,7 +106,11 @@ services:
     ports:
       - "3000:3000"
     volumes:
+      # App source from the host — keep codegen output and edits in git.
       - ../saleor-storefront:/app
+      # Linux-only node_modules — never bind-mount host `node_modules` from Windows/Mac (pnpm symlink
+      # layouts break inside the container: missing next loaders, MODULE_NOT_FOUND for @swc/helpers, 500s).
+      - storefront-node-modules:/app/node_modules
     env_file:
       - ../saleor-storefront/.env
     networks:
@@ -112,6 +121,9 @@ services:
       # Next.js server + GraphQL codegen run in this container — use the Compose service name.
       SALEOR_API_SERVER_URL: http://api:8000/graphql/
       NEXT_PUBLIC_STOREFRONT_URL: http://localhost:3000
+      # Saleor API + Celery worker POST webhooks from inside Docker — must use the Compose
+      # service hostname. `localhost` here would hit the wrong container.
+      SALEOR_WEBHOOK_TARGET_ORIGIN: http://storefront:3000
       # NEXT_PUBLIC_DEFAULT_CHANNEL comes from saleor-storefront/.env (do not hardcode here)
       # Reliable file watching when bind-mounting from Windows/macOS
       WATCHPACK_POLLING: "true"
@@ -119,6 +131,9 @@ services:
       # → /shop with many SSR queries). Omit in production-looking compose if you tune rate limits.
       SALEOR_MIN_REQUEST_DELAY_MS: "0"
       SALEOR_MAX_CONCURRENT_REQUESTS: "8"
+      # Stripe direct integration — values come from saleor-storefront/.env so secrets stay out of compose.
+      # NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, SALEOR_APP_TOKEN_PAYMENTS
+      # must all be set in that .env. They are inherited via the `env_file` directive above.
     depends_on:
       - api
     # Use `next dev` directly so lifecycle `predev` does not re-run GraphQL codegen on every boot (slow on bind mounts).
@@ -134,6 +149,8 @@ volumes:
   saleor-db:
     driver: local
   saleor-cache:
+    driver: local
+  storefront-node-modules:
     driver: local
   saleor-media:
 

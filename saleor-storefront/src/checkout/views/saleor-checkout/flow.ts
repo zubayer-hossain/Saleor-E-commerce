@@ -1,6 +1,10 @@
 import { type ReadonlyURLSearchParams } from "next/navigation";
 
-export type CheckoutStepType = "INFO" | "SHIPPING" | "PAYMENT" | "CONFIRMATION";
+// NOTE: No "CONFIRMATION" step here on purpose. Once Stripe + checkoutComplete
+// returns a real Saleor `orderId`, the URL gets `?orderId=…` and `root-views.tsx`
+// renders `<OrderConfirmation/>` instead of `<SaleorCheckout/>`. There is no
+// in-flow confirmation slide anymore — the old DEMO-… banner has been deleted.
+export type CheckoutStepType = "INFO" | "SHIPPING" | "PAYMENT";
 
 interface CheckoutStep {
 	id: CheckoutStepType;
@@ -22,10 +26,7 @@ export const getCheckoutSteps = (isShippingRequired: boolean): CheckoutStep[] =>
 		steps.push({ id: "SHIPPING", label: "Shipping", slug: "shipping" });
 	}
 
-	steps.push(
-		{ id: "PAYMENT", label: "Payment", slug: "payment" },
-		{ id: "CONFIRMATION", label: "Confirmation", slug: "confirmation" },
-	);
+	steps.push({ id: "PAYMENT", label: "Payment", slug: "payment" });
 
 	// Add 1-based indices
 	return steps.map((step, i) => ({

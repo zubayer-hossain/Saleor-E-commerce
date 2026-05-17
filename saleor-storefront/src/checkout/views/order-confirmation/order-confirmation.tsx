@@ -5,6 +5,7 @@ import { CheckCircle, Mail, MapPin, Package, CreditCard } from "lucide-react";
 import { useOrder } from "@/checkout/hooks/use-order";
 import { OrderSummary } from "@/checkout/views/saleor-checkout/order-summary";
 import { CheckoutHeader } from "@/checkout/views/saleor-checkout/checkout-header";
+import { OrderConfirmationSkeleton } from "./order-confirmation-skeleton";
 import { DefaultChannelSlug } from "@/app/config";
 import { localeConfig } from "@/config/locale";
 
@@ -25,8 +26,15 @@ function formatAddress(address: {
  * Renders after successful order creation with real order data.
  */
 export const OrderConfirmation = () => {
-	const { order } = useOrder();
+	const { order, loading } = useOrder();
 	const channel = DefaultChannelSlug;
+
+	// useOrder doesn't throw a Promise, so Suspense fallback in RootViews
+	// won't catch the loading state. Render the skeleton inline instead so
+	// we don't crash on `order.shippingAddress` while urql is fetching.
+	if (loading || !order) {
+		return <OrderConfirmationSkeleton />;
+	}
 
 	// Calculate estimated delivery (7 days from now)
 	// Using a static calculation - this component only renders once after order creation
@@ -54,7 +62,6 @@ export const OrderConfirmation = () => {
 					{/* Left column: Confirmation content (~70%) */}
 					<div className="order-2 min-w-0 flex-1 md:order-1">
 						<div className="rounded-lg border border-border bg-card p-6 md:p-8">
-							{/* Same content as ConfirmationStep */}
 							<div className="space-y-8">
 								{/* Success Header */}
 								<div className="space-y-4 text-center">

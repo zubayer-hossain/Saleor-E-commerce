@@ -2,6 +2,7 @@
 
 import { useState, useTransition, useCallback } from "react";
 import { Plus, Pencil } from "lucide-react";
+import { toast } from "sonner";
 import { type AddressDetailsFragment } from "@/gql/graphql";
 import { Button } from "@/ui/components/ui/button";
 import { Input } from "@/ui/components/ui/input";
@@ -14,6 +15,7 @@ import {
 	SheetDescription,
 	SheetCloseButton,
 } from "@/ui/components/ui/sheet";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/components/ui/tooltip";
 import { createAddress, updateAddress } from "@/app/[channel]/(main)/account/actions";
 
 type Props = {
@@ -37,6 +39,7 @@ export function AddressFormDialog({ address }: Props) {
 				if (!result.success) {
 					setError(result.error);
 				} else {
+					toast.success(isEditing ? "Address updated." : "Address saved.");
 					setOpen(false);
 				}
 			});
@@ -47,9 +50,17 @@ export function AddressFormDialog({ address }: Props) {
 	return (
 		<>
 			{isEditing ? (
-				<Button variant="ghost" size="sm" onClick={() => setOpen(true)} aria-label="Edit address">
-					<Pencil className="h-3.5 w-3.5" />
-				</Button>
+				<Tooltip>
+					<TooltipTrigger asChild>
+						<Button variant="ghost" size="sm" onClick={() => setOpen(true)} aria-label="Edit address">
+							<Pencil className="h-3.5 w-3.5" aria-hidden />
+						</Button>
+					</TooltipTrigger>
+					<TooltipContent side="bottom">
+						<p className="font-medium">Edit address</p>
+						<p className="mt-1 text-xs opacity-90">Change name, street, or contact details.</p>
+					</TooltipContent>
+				</Tooltip>
 			) : (
 				<Button variant="outline-solid" size="sm" onClick={() => setOpen(true)}>
 					<Plus className="mr-1 h-4 w-4" />

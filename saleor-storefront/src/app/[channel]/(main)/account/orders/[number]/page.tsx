@@ -1,12 +1,13 @@
 import { notFound } from "next/navigation";
 import Image from "next/image";
-import { MapPin, CreditCard } from "lucide-react";
+import { MapPin, CreditCard, FileText, ExternalLink } from "lucide-react";
 import { OrderByNumberDocument } from "@/gql/graphql";
 import { executeAuthenticatedGraphQL } from "@/lib/graphql";
 import { LinkWithChannel } from "@/ui/atoms/link-with-channel";
 import { formatDate, formatMoney } from "@/lib/utils";
 import { OrderTimeline } from "@/ui/components/account/order-timeline";
 import { OrderStatusBadge } from "@/ui/components/account/order-status-badge";
+import { AccountAuthUnavailable } from "@/ui/components/account/account-auth-unavailable";
 import { type AddressDetailsFragment } from "@/gql/graphql";
 
 type Props = {
@@ -25,8 +26,17 @@ export default async function OrderDetailPage({ params }: Props) {
 		cache: "no-cache",
 	});
 
-	if (!result.ok || !result.data.me) {
-		return null;
+	// Network blip mid-render — show the same soft auto-recovering screen the
+	// account layout uses, instead of an empty page that looks like a logout.
+	if (!result.ok) {
+		if (result.error.type === "network") {
+			return <AccountAuthUnavailable message={result.error.message} />;
+		}
+		notFound();
+	}
+
+	if (!result.data.me) {
+		notFound();
 	}
 
 	const orders = result.data.me.orders?.edges ?? [];
@@ -149,6 +159,38 @@ export default async function OrderDetailPage({ params }: Props) {
 									{order.paymentStatus === "FULLY_CHARGED" ? "Paid" : order.paymentStatus}
 								</span>
 							</div>
+						</div>
+					)}
+
+					{Array.isArray(order.invoices) && order.invoices.length > 0 && (
+						<div className="rounded-xl border px-5 py-4">
+							<h3 className="mb-3 text-sm font-semibold">Invoices</h3>
+							<ul className="space-y-2">
+								{order.invoices
+									.filter((inv): inv is NonNullable<typeof inv> => Boolean(inv?.url))
+									.map((inv) => (
+										<li key={inv.id} className="flex items-center justify-between gap-3">
+											<div className="flex items-center gap-2 text-sm">
+												<FileText className="h-4 w-4 text-muted-foreground" />
+												<span className="font-medium">{inv.number ?? `Invoice ${inv.id.slice(-6)}`}</span>
+												{inv.createdAt && (
+													<span className="text-xs text-muted-foreground">
+														{formatDate(new Date(inv.createdAt))}
+													</span>
+												)}
+											</div>
+											<a
+												href={inv.url ?? "#"}
+												target="_blank"
+												rel="noopener noreferrer"
+												className="hover:bg-secondary inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors"
+											>
+												View
+												<ExternalLink className="h-3 w-3" />
+											</a>
+										</li>
+									))}
+							</ul>
 						</div>
 					)}
 

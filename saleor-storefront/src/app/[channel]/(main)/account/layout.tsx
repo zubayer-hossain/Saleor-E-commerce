@@ -1,10 +1,12 @@
 import { type ReactNode, Suspense } from "react";
-import { cookies } from "next/headers";
-import { LoginForm } from "@/ui/components/login-form";
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import { AccountNav } from "@/ui/components/account/account-nav";
 import { AccountSkeleton } from "@/ui/components/account/account-skeleton";
 import { AccountProvider } from "@/ui/components/account/account-context";
-import { getCurrentUser } from "./get-current-user";
+import { AccountAuthUnavailable } from "@/ui/components/account/account-auth-unavailable";
+import { fetchAccountSession } from "./get-current-user";
+import { DefaultChannelSlug } from "@/app/config";
 
 export const metadata = {
 	title: "My Account",
@@ -19,34 +21,44 @@ export default function AccountLayout({ children }: { children: ReactNode }) {
 }
 
 async function AccountShell({ children }: { children: ReactNode }) {
-	let hasCookies = false;
-	try {
-		const cookieStore = await cookies();
-		hasCookies = cookieStore.getAll().length > 0;
-	} catch {
-		// Static generation
+	const headersList = await headers();
+	const pathname =
+		headersList.get("x-pathname") ??
+		(DefaultChannelSlug ? `/${DefaultChannelSlug}/account` : "/account");
+
+	const channel =
+		pathname.split("/").filter(Boolean)[0] ?? DefaultChannelSlug ?? null;
+
+	if (!channel) {
+		redirect("/");
 	}
 
-	if (!hasCookies) {
-		return <LoginForm />;
+	const session = await fetchAccountSession();
+
+	// Network blip while loading account data — show soft auto-recovering
+	// "Reconnecting…" screen instead of taking the user to login. We also fall
+	// through here for non-network errors (rare); login-redirect happens only
+	// for explicit anonymous status (no user from Saleor) or 401/403.
+	if (session.status === "error") {
+		return <AccountAuthUnavailable message={session.message} />;
 	}
 
-	const user = await getCurrentUser();
-
-	if (!user) {
-		return <LoginForm />;
-	}
-
-	return (
-		<AccountProvider user={user}>
-			<div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
-				<div className="flex flex-col gap-8 md:flex-row">
-					<aside className="shrink-0 md:min-h-[60vh] md:w-52">
-						<AccountNav />
-					</aside>
-					<div className="min-w-0 flex-1">{children}</div>
+	if (session.status === "authenticated") {
+		return (
+			<AccountProvider user={session.user}>
+				<div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
+					<div className="flex flex-col gap-8 md:flex-row">
+						<aside className="shrink-0 md:min-h-[60vh] md:w-52">
+							<AccountNav />
+						</aside>
+						<div className="min-w-0 flex-1">{children}</div>
+					</div>
 				</div>
-			</div>
-		</AccountProvider>
-	);
+			</AccountProvider>
+		);
+	}
+
+	// Anonymous or hard auth failure — full login page with deep-link back
+	const nextTarget = pathname.startsWith("/") ? pathname : `/${channel}/account`;
+	redirect(`/${channel}/login?next=${encodeURIComponent(nextTarget)}`);
 }

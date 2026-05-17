@@ -102,7 +102,13 @@ function getVariantDetails(variant: CartLine["variant"]): VariantAttribute[] {
 interface CartDrawerProps {
 	checkoutId: string | null;
 	lines: CartLine[];
-	totalPrice: {
+	/**
+	 * Saleor `checkout.subtotalPrice` (lines only). Do NOT pass `totalPrice` here —
+	 * once any delivery method is set on the checkout (e.g. carry-over from a prior
+	 * shipping step), `totalPrice` already includes shipping, which would inflate
+	 * the bag's subtotal/total while the UI still says "Calculated at checkout".
+	 */
+	subtotalPrice: {
 		gross: {
 			amount: number;
 			currency: string;
@@ -111,13 +117,16 @@ interface CartDrawerProps {
 	channel: string;
 }
 
-export function CartDrawer({ checkoutId, lines, totalPrice, channel }: CartDrawerProps) {
+export function CartDrawer({ checkoutId, lines, subtotalPrice, channel }: CartDrawerProps) {
 	const { isOpen, closeCart } = useCart();
 	const [isPending, startTransition] = useTransition();
 
 	const itemCount = lines.reduce((sum, line) => sum + line.quantity, 0);
-	const subtotal = totalPrice?.gross.amount ?? 0;
-	const currency = totalPrice?.gross.currency ?? localeConfig.fallbackCurrency;
+	// Compute subtotal from line totals as a safety net for stale `subtotalPrice` payloads.
+	const linesSubtotal = lines.reduce((sum, line) => sum + (line.totalPrice?.gross.amount ?? 0), 0);
+	const subtotal = subtotalPrice?.gross.amount ?? linesSubtotal;
+	const currency =
+		subtotalPrice?.gross.currency ?? lines[0]?.totalPrice.gross.currency ?? localeConfig.fallbackCurrency;
 
 	const handleRemove = (lineId: string) => {
 		if (!checkoutId) return;
@@ -324,9 +333,13 @@ export function CartDrawer({ checkoutId, lines, totalPrice, channel }: CartDrawe
 								<span className="text-muted-foreground">Subtotal</span>
 								<span>{formatMoney(subtotal, currency)}</span>
 							</div>
+							{/* Shipping is intentionally NOT computed here — selection happens on the checkout page.
+							    Saleor may already have a fallback delivery method on the checkout (e.g. last visited
+							    shipping step picked one), but the bag should still read "Calculated at checkout" so
+							    the customer treats the carrier choice as a fresh decision. */}
 							<div className="flex items-center justify-between text-sm">
 								<span className="text-muted-foreground">Shipping</span>
-								<span>{subtotal >= freeShippingThreshold ? "Free" : "Calculated at checkout"}</span>
+								<span className="text-muted-foreground">Calculated at checkout</span>
 							</div>
 							<div className="flex items-center justify-between border-t border-border pt-2 text-base font-semibold">
 								<span>Total</span>
