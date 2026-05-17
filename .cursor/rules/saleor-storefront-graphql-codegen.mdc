@@ -1,0 +1,20 @@
+---
+description: Regenerate storefront GraphQL/Hooks after .graphql edits; sanity-check checkout (shipping step) without asking user
+alwaysApply: true
+---
+
+# Saleor storefront — rebuild / codegen (do automatically)
+
+Whenever you change **`saleor-storefront`** GraphQL documents (e.g. `src/graphql/**/*.graphql`, `src/checkout/graphql/**/*.graphql`) or checkout-related generated hooks/types may be stale:
+
+1. **Run codegen yourself** — do not ask the maintainer unless the command fails permanently:
+   - `cd saleor-storefront`
+   - On Windows/non-TTY shells: `$env:CI='true'` (helps `pnpm` avoid prompts)
+   - `pnpm install` if `node_modules` is missing or clearly broken.
+   - `pnpm run generate:all` (runs main + checkout codegen).
+
+2. If `pnpm install` fails on **`prepare`/husky** (no `.git` in subdirectory), rerun only install with `pnpm install --ignore-scripts` when needed — then **`pnpm run generate:all`** is what matters most for GraphQL hooks.
+
+3. After checkout/shipping/discount/schema-related fixes, mentally verify the flow: **`/checkout?...&step=shipping`** and promo apply — but **execute codegen first** whenever `.graphql` or generated API usage changed.
+
+4. Repo expects **Node 20.x** (see `engines`); Node 22 may warn but codegen often still works locally.
