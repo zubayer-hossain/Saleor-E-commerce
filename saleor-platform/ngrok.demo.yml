@@ -1,0 +1,20 @@
+# Tunnel definitions only (authtoken lives in user config merged at runtime).
+#
+# Ngrok paid/free tiers often limit simultaneous HTTP endpoints per agent (commonly three).
+# This default exposes API + storefront + dashboard. Use Mailpit on http://localhost:8025 locally,
+# or swap in `ngrok.demo.with-mailpit.yml` if your plan allows a fourth tunnel.
+#
+# Merge with default config when starting:
+#   ngrok start --all --config %LOCALAPPDATA%\ngrok\ngrok.yml --config ngrok.demo.yml
+#
+version: "2"
+tunnels:
+  saleor-api:
+    proto: http
+    addr: 8000
+  saleor-storefront:
+    proto: http
+    addr: 3000
+  saleor-dashboard:
+    proto: http
+    addr: 9000

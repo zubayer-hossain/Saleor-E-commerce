@@ -89,6 +89,24 @@ docker compose up
 - Jaeger UI (APM) - http://localhost:16686
 - Mailpit (Test email interface) - http://localhost:8025
 
+## Remote demo (ngrok)
+
+To share the storefront publicly, the browser needs HTTPS URLs for **both** the Saleor API and the storefront. Compose variables are interpolated via `docker compose --env-file`.
+
+1. One-time: [install ngrok](https://ngrok.com/download) and run `ngrok config add-authtoken <your token>`.
+2. From the repo root:
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File saleor-platform/scripts/start-ngrok-demo.ps1
+   ```
+   This merges your personal ngrok config (authtoken) with [`ngrok.demo.yml`](./ngrok.demo.yml) and starts **three** tunnels: **8000 (API)**, **3000 (storefront)**, **9000 (dashboard)**. Ngrok free and many paid plans cap simultaneous HTTP endpoints per agent (often **three**); that is why Mailpit is not tunnelled by default. Open Mailpit on [http://localhost:8025/](http://localhost:8025/), or if your plan supports a fourth tunnel add `-IncludeMailpit` (loads [`ngrok.demo.with-mailpit.yml`](./ngrok.demo.with-mailpit.yml)).
+
+   The script writes `saleor-platform/.env.ngrok.demo.local` (including Saleor **`ALLOWED_CLIENT_HOSTS`** so signup / reset-password links validate) and restarts **`api`**, **`worker`**, and **`storefront`**. Leave ngrok running (minimized window) until the demo ends.
+3. Apply the same URLs later from **`saleor-platform/`** (Compose + env file live together): `cd saleor-platform && docker compose --env-file .env.ngrok.demo.local up -d api worker storefront`. From the monorepo root instead: `docker compose -f saleor-platform/docker-compose.yml --env-file saleor-platform/.env.ngrok.demo.local up -d api worker storefront`.
+
+Webhook traffic from Saleor to the storefront still uses `http://storefront:3000` inside Docker. Stripe still needs [`stripe listen`](https://stripe.com/docs/stripe-cli) or a public signing endpoint for test webhooks.
+
+If the **language switcher** or **cart** feel dead over the tunnel while add-to-bag still works, Next.js **dev mode** was likely blocking `/_next` loads and **webpack-hmr** (fix: `allowedDevOrigins` for ngrok in `saleor-storefront/next.config.js`)—**restart the storefront container** after pulling so dev picks up config.
+
 # Troubleshooting
 
 - [How to solve issues with lack of available space or build errors after an update](#how-to-solve-issues-with-lack-of-available-space-or-build-errors-after-an-update)

@@ -1,0 +1,9 @@
+# Optional fourth tunnel — only if your ngrok billing plan supports 4+ endpoints per agent session.
+#
+# Merge: ngrok start --all --config <user-ngrok.yml> --config ngrok.demo.with-mailpit.yml
+#
+version: "2"
+tunnels:
+  mailpit:
+    proto: http
+    addr: 8025

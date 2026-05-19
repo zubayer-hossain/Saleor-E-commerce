@@ -163,11 +163,41 @@ function isTrustedSaleorApiUrl(headerValue: string): boolean {
 				continue;
 			}
 		}
+		// Compose: SALEOR_API_SERVER_URL is often http://api:8000/graphql/ but Saleor may send
+		// saleor-api-url as http://localhost:8000/graphql/ (PUBLIC_URL / internal resolution).
+		const stripTrailingSlash = (path: string) => path.replace(/\/+$/, "");
+		for (const c of candidates) {
+			try {
+				const cand = new URL(c.trim());
+				const pathMatch = stripTrailingSlash(i.pathname) === stripTrailingSlash(cand.pathname);
+				if (!pathMatch || i.protocol !== cand.protocol) continue;
+				const p1 = i.port || (i.protocol === "https:" ? "443" : "80");
+				const p2 = cand.port || (cand.protocol === "https:" ? "443" : "80");
+				if (p1 !== p2) continue;
+				if (!hostnameIsSaleorComposeAlias(i.hostname) || !hostnameIsSaleorComposeAlias(cand.hostname))
+					continue;
+				return true;
+			} catch {
+				continue;
+			}
+		}
 	} catch {
 		return false;
 	}
 
 	return false;
+}
+
+/** Hostnames that all refer to the same Saleor Core in local Docker Compose. */
+function hostnameIsSaleorComposeAlias(hostname: string): boolean {
+	const h = hostname.toLowerCase();
+	return (
+		h === "api" ||
+		h === "localhost" ||
+		h === "127.0.0.1" ||
+		h === "::1" ||
+		h === "host.docker.internal"
+	);
 }
 
 /**

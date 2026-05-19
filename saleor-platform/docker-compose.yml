@@ -19,16 +19,22 @@ services:
       - common.env
       - backend.env
     environment:
-      - DASHBOARD_URL=http://localhost:9000/
-      - ALLOWED_HOSTS=localhost,127.0.0.1,api,host.docker.internal
-      # Allow GraphQL introspection from Docker services (e.g. storefront codegen)
-      - HTTP_IP_FILTER_ENABLED=False
+      # Ngrok/demo: merge `saleor-platform/.env.ngrok.demo.local` and run Compose with `--env-file` (see README).
+      DASHBOARD_URL: ${SALEOR_DASHBOARD_URL:-http://localhost:9000/}
+      ALLOWED_HOSTS: ${SALEOR_ALLOWED_HOSTS:-localhost,127.0.0.1,api,host.docker.internal}
+      # accountRegister / password-reset redirect URLs must match RFC 1808 storefront origins (Saleor validates).
+      ALLOWED_CLIENT_HOSTS: ${SALEOR_ALLOWED_CLIENT_HOSTS:-http://localhost:3000,http://127.0.0.1:3000}
+      HTTP_IP_FILTER_ENABLED: "False"
 
   dashboard:
     image: ghcr.io/saleor/saleor-dashboard:3.23
     ports:
       - 9000:80
     restart: unless-stopped
+    environment:
+      # Browser-visible GraphQL endpoint. Ngrok demo: set SALEOR_DASHBOARD_API_URL via --env-file.
+      # Without this, the SPA falls back to http://localhost:8000 which breaks mobile / remote browsers.
+      API_URL: ${SALEOR_DASHBOARD_API_URL:-http://localhost:8000/graphql/}
 
   db:
     image: library/postgres:15-alpine
@@ -69,7 +75,9 @@ services:
     # HTTP_IP_FILTER_ENABLED=True — Saleor then rejects Docker-internal URLs like
     # http://storefront:3000 as non-public IPs ("Invalid IP address"). Match api.
     environment:
-      - HTTP_IP_FILTER_ENABLED=False
+      # Match api ALLOWED_* so Celery-sent auth emails inherit the same client redirect whitelist.
+      ALLOWED_CLIENT_HOSTS: ${SALEOR_ALLOWED_CLIENT_HOSTS:-http://localhost:3000,http://127.0.0.1:3000}
+      HTTP_IP_FILTER_ENABLED: "False"
     depends_on:
       - cache
       - mailpit
@@ -116,11 +124,11 @@ services:
     networks:
       - saleor-backend-tier
     environment:
-      # Browser runs on the host — must use a URL the host can reach (Saleor published on localhost:8000).
-      NEXT_PUBLIC_SALEOR_API_URL: http://127.0.0.1:8000/graphql/
+      # Browser must reach the Saleor endpoint; Compose `--env-file` can point these at HTTPS ngrok URLs.
+      NEXT_PUBLIC_SALEOR_API_URL: ${NEXT_PUBLIC_SALEOR_API_URL:-http://127.0.0.1:8000/graphql/}
       # Next.js server + GraphQL codegen run in this container — use the Compose service name.
       SALEOR_API_SERVER_URL: http://api:8000/graphql/
-      NEXT_PUBLIC_STOREFRONT_URL: http://localhost:3000
+      NEXT_PUBLIC_STOREFRONT_URL: ${NEXT_PUBLIC_STOREFRONT_URL:-http://localhost:3000}
       # Saleor API + Celery worker POST webhooks from inside Docker — must use the Compose
       # service hostname. `localhost` here would hit the wrong container.
       SALEOR_WEBHOOK_TARGET_ORIGIN: http://storefront:3000

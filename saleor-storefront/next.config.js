@@ -1,9 +1,68 @@
 /** @type {import('next').NextConfig} */
+
+/**
+ * Next.js dev blocks cross-origin requests to `/_next/*` (including the `webpack-hmr` websocket)
+ * unless the browser `Origin` hostname matches `allowedDevOrigins`. Tunnels like ngrok appear
+ * cross-origin because the dev server binds to `localhost` / `0.0.0.0` internally.
+ * @see https://nextjs.org/docs/app/api-reference/config/next-config-js/allowedDevOrigins
+ */
+function collectAllowedDevOrigins() {
+	const origins = new Set([
+		"*.ngrok-free.app",
+		"*.ngrok.app",
+		"*.ngrok.io",
+	]);
+
+	const storefront = process.env.NEXT_PUBLIC_STOREFRONT_URL;
+	if (storefront && typeof storefront === "string") {
+		try {
+			const { hostname } = new URL(storefront);
+			if (hostname) {
+				origins.add(hostname);
+			}
+		} catch {
+			// ignore invalid env
+		}
+	}
+
+	return [...origins];
+}
+
+/**
+ * Server Actions CSRF / origin checks (`experimental.serverActions.allowedOrigins`).
+ * Host:port and wildcards as supported by Next.js.
+ */
+function collectServerActionAllowedOrigins() {
+	const origins = new Set([
+		"localhost:3000",
+		"127.0.0.1:3000",
+		// ngrok dev tunnels — subdomain changes whenever the agent restarts
+		"*.ngrok-free.app",
+		"*.ngrok.app",
+		"*.ngrok.io",
+	]);
+
+	const storefront = process.env.NEXT_PUBLIC_STOREFRONT_URL;
+	if (storefront && typeof storefront === "string") {
+		try {
+			const { hostname, port } = new URL(storefront);
+			if (hostname) {
+				origins.add(port ? `${hostname}:${port}` : hostname);
+			}
+		} catch {
+			// ignore invalid env
+		}
+	}
+
+	return [...origins];
+}
+
 const config = {
 	// Cache Components (Partial Prerendering)
 	// Enables mixing static, cached, and dynamic content in a single route.
 	// See: https://nextjs.org/docs/app/getting-started/cache-components
 	cacheComponents: true,
+	allowedDevOrigins: collectAllowedDevOrigins(),
 
 	// Keep Node-native server SDKs out of the webpack bundle. Stripe ships its own
 	// HTTPS agent on top of `node:https`; when webpack inlines it, the agent's
@@ -16,6 +75,9 @@ const config = {
 	// See: https://vercel.com/blog/how-we-optimized-package-imports-in-next-js
 	experimental: {
 		optimizePackageImports: ["lucide-react", "lodash-es"],
+		serverActions: {
+			allowedOrigins: collectServerActionAllowedOrigins(),
+		},
 		// Note: API rate limiting is handled by RequestQueue in src/lib/graphql.ts
 		// (max 3 concurrent requests + 200ms delay between requests)
 	},
